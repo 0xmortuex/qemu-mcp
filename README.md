@@ -92,9 +92,17 @@ qemu_serial(name="k")          # did DHCP bind?
 qemu_screenshot(name="k")      # what does the console show?
 ```
 
-## Smoke test
+## Tests
 
-There's an end-to-end test that boots a real ISO and exercises every tool:
+Unit tests for the character/key-name -> QMP qcode translation in `keys.py`
+need no QEMU install:
+
+```bash
+pip install -e ".[test]"
+pytest tests/test_keys.py
+```
+
+There's also an end-to-end test that boots a real ISO and exercises every tool:
 
 ```bash
 QEMU_MCP_TEST_ISO=path/to/anything-bootable.iso python tests/smoke_test.py

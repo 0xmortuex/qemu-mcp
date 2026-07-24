@@ -17,6 +17,9 @@ classifiers = [
     "Topic :: System :: Emulators",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
 [project.urls]
 Homepage = "https://github.com/0xmortuex/qemu-mcp"
 
