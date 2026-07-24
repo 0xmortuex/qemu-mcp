@@ -1,0 +1,31 @@
+[project]
+name = "qemu-mcp"
+version = "0.1.0"
+description = "MCP server that lets AI agents boot and drive QEMU virtual machines - keystrokes, screenshots, serial console, QMP."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "0xmortuex" }]
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.2.0", "pillow>=10.0"]
+keywords = ["mcp", "qemu", "osdev", "virtual-machine", "ai-agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Emulators",
+]
+
+[project.urls]
+Homepage = "https://github.com/0xmortuex/qemu-mcp"
+
+[project.scripts]
+qemu-mcp = "qemu_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qemu_mcp"]

@@ -1,0 +1,188 @@
+"""qemu-mcp: an MCP server that lets an AI agent boot and drive QEMU VMs."""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import time
+
+from mcp.server.fastmcp import FastMCP, Image
+
+from . import keys as keymod
+from . import vm as vmmod
+
+mcp = FastMCP(
+    "qemu",
+    instructions=(
+        "Boot and drive QEMU virtual machines: boot an ISO/kernel/disk, "
+        "type into the guest, take screenshots, read the serial console, "
+        "and wait for boot markers. Typical loop: qemu_boot -> "
+        "qemu_wait_serial or a short pause -> qemu_screenshot -> "
+        "qemu_type / qemu_key -> qemu_screenshot -> qemu_stop. "
+        "Screenshots show the guest's VGA display even though the VM "
+        "runs headless."
+    ),
+)
+
+
+@mcp.tool()
+def qemu_boot(
+    name: str,
+    iso: str | None = None,
+    kernel: str | None = None,
+    append: str | None = None,
+    initrd: str | None = None,
+    disk: str | None = None,
+    arch: str = "x86_64",
+    memory_mb: int = 256,
+    extra_args: str | None = None,
+) -> str:
+    """Boot a QEMU VM headless and register it under `name`.
+
+    Provide at least one of: iso (bootable CD image), kernel (multiboot/bzImage,
+    optionally with append/initrd), or disk (raw disk image). arch picks the
+    qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...). extra_args
+    is passed to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0".
+    The VM keeps running until qemu_stop; serial output is captured continuously.
+    """
+    vm = vmmod.boot(name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args)
+    return (
+        f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB).\n"
+        f"Serial log: {vm.serial_path}\n"
+        f"Next: qemu_wait_serial for a boot marker, or qemu_screenshot to see the display."
+    )
+
+
+@mcp.tool()
+def qemu_screenshot(name: str) -> Image:
+    """Capture the VM's display as a PNG image.
+
+    Works headless - the guest's VGA framebuffer is captured via QMP
+    screendump. Use it to see boot screens, kernel panics, GUIs, or a
+    text console that doesn't write to serial.
+    """
+    from PIL import Image as PILImage
+
+    vm = vmmod.get_vm(name)
+    ppm = os.path.join(vm.workdir, "shot.ppm")
+    vm.qmp.command("screendump", filename=ppm)
+    # QMP returns before the file write is guaranteed visible; poll briefly.
+    for _ in range(20):
+        if os.path.isfile(ppm) and os.path.getsize(ppm) > 0:
+            break
+        time.sleep(0.05)
+    with PILImage.open(ppm) as im:
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+    return Image(data=buf.getvalue(), format="png")
+
+
+@mcp.tool()
+def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
+    """Type text into the guest as keyboard input. "\\n" presses Enter.
+
+    Handles US-layout characters including shifted symbols. delay_ms is the
+    gap between keystrokes - raise it (e.g. 80) if the guest drops
+    characters during early boot.
+    """
+    vm = vmmod.get_vm(name)
+    for ch in text:
+        qcodes = keymod.char_to_keys(ch)
+        vm.qmp.command(
+            "send-key",
+            keys=[{"type": "qcode", "data": q} for q in qcodes],
+        )
+        time.sleep(delay_ms / 1000)
+    return f"typed {len(text)} characters into {name!r}"
+
+
+@mcp.tool()
+def qemu_key(name: str, combo: str) -> str:
+    """Press a key or chord: "enter", "esc", "f12", "ctrl-alt-f2", "ctrl-c"...
+
+    Parts are joined with "-" and pressed together. Use qemu_type for
+    plain text.
+    """
+    vm = vmmod.get_vm(name)
+    qcodes = keymod.parse_combo(combo)
+    vm.qmp.command("send-key", keys=[{"type": "qcode", "data": q} for q in qcodes])
+    return f"pressed {combo} in {name!r}"
+
+
+@mcp.tool()
+def qemu_serial(name: str, tail_lines: int = 50) -> str:
+    """Read the tail of the VM's serial console output (COM1)."""
+    vm = vmmod.get_vm(name)
+    text = vm.serial_text()
+    if not text:
+        return "(no serial output yet)"
+    return vmmod.tail(text, tail_lines)
+
+
+@mcp.tool()
+def qemu_wait_serial(name: str, text: str, timeout_s: int = 30) -> str:
+    """Block until `text` appears on the serial console, or time out.
+
+    The reliable way to know a guest reached a boot stage ("login:",
+    "kernel ready", a shell prompt) before typing or screenshotting.
+    Returns the serial tail either way, prefixed FOUND or TIMEOUT.
+    """
+    vm = vmmod.get_vm(name)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        out = vm.serial_text()
+        if text in out:
+            return "FOUND\n" + vmmod.tail(out, 20)
+        if not vm.running:
+            return "VM EXITED\n" + vmmod.tail(out, 20)
+        time.sleep(0.25)
+    return "TIMEOUT\n" + vmmod.tail(vm.serial_text(), 20)
+
+
+@mcp.tool()
+def qemu_list() -> str:
+    """List all VMs managed by this server, with pid, uptime, and state."""
+    vms = vmmod.list_vms()
+    if not vms:
+        return "no VMs"
+    rows = []
+    for vm in vms:
+        state = "running" if vm.running else f"exited({vm.proc.returncode})"
+        rows.append(
+            f"{vm.name}: {state}, pid {vm.proc.pid}, "
+            f"up {int(time.monotonic() - vm.started_at)}s, "
+            f"serial {os.path.getsize(vm.serial_path) if os.path.isfile(vm.serial_path) else 0} bytes"
+        )
+    return "\n".join(rows)
+
+
+@mcp.tool()
+def qemu_stop(name: str, force: bool = False) -> str:
+    """Stop a VM. Tries graceful ACPI powerdown first; force=True kills it.
+
+    Guests without ACPI handling (most hobby kernels) will need force=True
+    or will be killed after the 10 s grace period anyway.
+    """
+    outcome = vmmod.stop(name, force)
+    return f"VM {name!r} stopped ({outcome})"
+
+
+@mcp.tool()
+def qemu_qmp(name: str, command: str, arguments: dict | None = None) -> str:
+    """Escape hatch: run a raw QMP command on the VM.
+
+    Examples: query-status, system_reset, memsave, device_add. See the QEMU
+    QMP reference for commands and their arguments.
+    """
+    vm = vmmod.get_vm(name)
+    result = vm.qmp.command(command, **(arguments or {}))
+    return json.dumps(result, indent=2, default=str)
+
+
+def main() -> None:
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()
