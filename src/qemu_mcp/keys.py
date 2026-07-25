@@ -43,6 +43,8 @@ _NAMED.update({f"f{i}": f"f{i}" for i in range(1, 13)})
 
 def char_to_keys(ch: str) -> list[str]:
     """One character -> the qcodes to press simultaneously."""
+    if len(ch) != 1:
+        raise ValueError(f"char_to_keys expects a single character, got {ch!r}")
     if ch.isascii() and (ch.islower() or ch.isdigit()):
         return [ch]
     if ch.isascii() and ch.isupper():

@@ -84,15 +84,14 @@ def test_char_to_keys_rejects_non_ascii():
         char_to_keys("é")
 
 
-def test_char_to_keys_does_not_validate_length():
-    # char_to_keys is documented as taking a single character, but the
+@pytest.mark.parametrize("ch", ["ab", "AB", "", "abc"])
+def test_char_to_keys_rejects_non_single_char(ch):
+    # char_to_keys is documented as taking a single character. The
     # lower/digit/upper branches use str.islower()/isdigit()/isupper(),
-    # which also match multi-char strings - so "ab" silently passes
-    # through as a (wrong) two-key combo instead of raising. Pinning
-    # this down so a future length check doesn't change behavior
-    # unnoticed. See BACKLOG.md.
-    assert char_to_keys("ab") == ["ab"]
-    assert char_to_keys("AB") == ["shift", "ab"]
+    # which also match multi-char strings, so a length guard is needed
+    # up front to reject anything that isn't exactly one character.
+    with pytest.raises(ValueError):
+        char_to_keys(ch)
 
 
 @pytest.mark.parametrize(
