@@ -20,6 +20,26 @@ _WINDOWS_QEMU_DIRS = [
 ]
 
 
+def _installed_arches() -> list[str]:
+    """Scan PATH (and the Windows QEMU dirs) for other qemu-system-* binaries."""
+    dirs = os.environ.get("PATH", "").split(os.pathsep)
+    if sys.platform == "win32":
+        dirs = [os.environ.get("QEMU_DIR"), *_WINDOWS_QEMU_DIRS, *dirs]
+    found = set()
+    for directory in dirs:
+        if not directory:
+            continue
+        try:
+            entries = os.listdir(directory)
+        except OSError:
+            continue
+        for entry in entries:
+            name = entry[:-4] if sys.platform == "win32" and entry.lower().endswith(".exe") else entry
+            if name.startswith("qemu-system-"):
+                found.add(name[len("qemu-system-"):])
+    return sorted(found)
+
+
 def find_qemu(arch: str) -> str:
     exe = f"qemu-system-{arch}"
     path = shutil.which(exe)
@@ -29,9 +49,15 @@ def find_qemu(arch: str) -> str:
         for base in [os.environ.get("QEMU_DIR"), *_WINDOWS_QEMU_DIRS]:
             if base and os.path.isfile(os.path.join(base, exe + ".exe")):
                 return os.path.join(base, exe + ".exe")
+    found = _installed_arches()
+    hint = (
+        f" Found on this system: {', '.join(found)}."
+        if found
+        else " No qemu-system-* binaries found anywhere on this system."
+    )
     raise FileNotFoundError(
         f"{exe} not found. Install QEMU and put it on PATH "
-        f"(or set QEMU_DIR on Windows)."
+        f"(or set QEMU_DIR on Windows).{hint}"
     )
 
 

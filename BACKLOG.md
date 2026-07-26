@@ -15,7 +15,7 @@ smallest-reviewable-change wins.
 - [x] Unit tests for `keys.py` (`char_to_keys` full printable-ASCII round-trip, `parse_combo` good + error cases) — no QEMU needed, plain pytest (`tests/test_keys.py`, 168 cases; `pytest>=7` added as the `test` extra)
 - [ ] GitHub Actions CI: ruff + the pytest unit tests + `mcp_handshake`-style stdio smoke on ubuntu-latest and windows-latest (handshake needs no QEMU)
 - [ ] Type-check pass (`mypy --strict src/`) and fix what it finds
-- [ ] Better error when an arch binary is missing: list which qemu-system-* binaries WERE found
+- [x] Better error when an arch binary is missing: list which qemu-system-* binaries WERE found — `find_qemu` now scans PATH (and the Windows QEMU dirs) for other `qemu-system-*` binaries and includes them in the `FileNotFoundError`, so picking a wrong `arch` tells you what's actually installed instead of just "not found". Verified with `tests/test_vm.py` (fake binaries on a scratch `PATH`, no real QEMU needed): lists other installed arches, reports none-found, still returns the exact match when present.
 - [x] `char_to_keys` silently accepted multi-char strings (`str.islower()`/`isdigit()`/`isupper()` match whole strings, not just one char) and returned a nonsense key combo instead of raising — added a `len(ch) != 1` guard at the top; `test_char_to_keys_does_not_validate_length` flipped to `test_char_to_keys_rejects_non_single_char` (asserts `ValueError` for `"ab"`, `"AB"`, `""`, `"abc"`). Verified: `char_to_keys` is only ever called with single characters (`qemu_type`'s `for ch in text`, `parse_combo`'s `len(p) == 1` branch), so no caller behavior changes.
 
 ## Distribution
