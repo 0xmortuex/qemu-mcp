@@ -10,6 +10,10 @@ from qemu_mcp import vm  # noqa: E402
 
 
 def _make_fake_binary(directory, name):
+    # shutil.which() only recognizes PATHEXT-suffixed files on Windows, unlike
+    # POSIX where the executable bit alone is enough - match real qemu installs.
+    if sys.platform == "win32" and not name.lower().endswith(".exe"):
+        name += ".exe"
     path = os.path.join(directory, name)
     with open(path, "w") as f:
         f.write("#!/bin/sh\n")
