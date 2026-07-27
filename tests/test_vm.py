@@ -50,4 +50,6 @@ def test_find_qemu_finds_exact_match_on_path(tmp_path, monkeypatch):
     path = _make_fake_binary(tmp_path, "qemu-system-x86_64")
     monkeypatch.setenv("PATH", str(tmp_path))
 
-    assert vm.find_qemu("x86_64") == path
+    # normcase: shutil.which() resolves the PATHEXT suffix itself on Windows
+    # and may return it in a different case (".EXE") than the file we made.
+    assert os.path.normcase(vm.find_qemu("x86_64")) == os.path.normcase(path)
