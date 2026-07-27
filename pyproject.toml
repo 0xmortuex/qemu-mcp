@@ -32,3 +32,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/qemu_mcp"]
+
+[tool.ruff.lint]
+# Pinned explicitly so a ruff upgrade can't silently change what "default" means
+# out from under CI (0.16.0 started flagging SIM/RUF checks that 0.15.8 didn't).
+# This is ruff's own documented default subset (pyflakes + pycodestyle errors).
+select = ["E4", "E7", "E9", "F"]

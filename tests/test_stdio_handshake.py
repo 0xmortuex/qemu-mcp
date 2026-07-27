@@ -28,14 +28,13 @@ EXPECTED_TOOLS = {
 @pytest.mark.anyio
 async def test_stdio_handshake_lists_expected_tools():
     params = StdioServerParameters(command=sys.executable, args=["-m", "qemu_mcp"])
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            init_result = await session.initialize()
-            assert init_result.serverInfo.name == "qemu"
+    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+        init_result = await session.initialize()
+        assert init_result.serverInfo.name == "qemu"
 
-            tools = await session.list_tools()
-            names = {t.name for t in tools.tools}
-            assert EXPECTED_TOOLS <= names
+        tools = await session.list_tools()
+        names = {t.name for t in tools.tools}
+        assert EXPECTED_TOOLS <= names
 
 
 @pytest.fixture
