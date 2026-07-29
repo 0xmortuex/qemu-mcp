@@ -37,18 +37,22 @@ def qemu_boot(
     arch: str = "x86_64",
     memory_mb: int = 256,
     extra_args: str | None = None,
+    machine: str | None = None,
 ) -> str:
     """Boot a QEMU VM headless and register it under `name`.
 
     Provide at least one of: iso (bootable CD image), kernel (multiboot/bzImage,
     optionally with append/initrd), or disk (raw disk image). arch picks the
-    qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...). extra_args
-    is passed to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0".
+    qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...). machine is
+    passed as QEMU's -M and is required on some archs - aarch64 and riscv64
+    have no default machine and need e.g. machine="virt". extra_args is passed
+    to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0".
     The VM keeps running until qemu_stop; serial output is captured continuously.
     """
-    vm = vmmod.boot(name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args)
+    vm = vmmod.boot(name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine)
+    machine_note = f", -M {machine}" if machine else ""
     return (
-        f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB).\n"
+        f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB{machine_note}).\n"
         f"Serial log: {vm.serial_path}\n"
         f"Next: qemu_wait_serial for a boot marker, or qemu_screenshot to see the display."
     )

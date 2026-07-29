@@ -30,7 +30,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 
 | Tool | What it does |
 |------|--------------|
-| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), arbitrary extra QEMU args (networking, devices…) |
+| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), arbitrary extra QEMU args (networking, devices…) |
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
 | `qemu_key` | Press a key or chord: `enter`, `esc`, `f12`, `ctrl-alt-f2`… |
@@ -91,6 +91,19 @@ qemu_type(name="k", text="net\n")
 qemu_serial(name="k")          # did DHCP bind?
 qemu_screenshot(name="k")      # what does the console show?
 ```
+
+### Non-x86 archs
+
+`x86_64` and `i386` boot with no `machine` argument. Other archs have no
+default machine in QEMU and need `-M` set explicitly, or they'll fail to
+boot:
+
+```
+qemu_boot(name="a", kernel="build/kernel-aarch64.elf", arch="aarch64", machine="virt")
+qemu_boot(name="r", kernel="build/kernel-riscv64.elf", arch="riscv64", machine="virt")
+```
+
+Check `qemu-system-<arch> -M help` for the full list of machines an arch supports.
 
 ## Tests
 

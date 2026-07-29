@@ -124,6 +124,7 @@ def boot(
     initrd: str | None,
     disk: str | None,
     extra_args: str | None,
+    machine: str | None = None,
 ) -> VM:
     stale = _vms.get(name)
     if stale is not None:
@@ -151,6 +152,8 @@ def boot(
         "-qmp", f"tcp:127.0.0.1:{port},server,nowait",
         "-serial", f"file:{serial_path}",
     ]
+    if machine:
+        args += ["-M", machine]
     if iso:
         args += ["-cdrom", iso, "-boot", "d"]
     if kernel:

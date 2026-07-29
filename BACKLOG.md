@@ -8,7 +8,7 @@ smallest-reviewable-change wins.
 - [ ] `qemu_mouse` tool — QMP `input-send-event` absolute pointer move + click (guests with mouse support become fully drivable)
 - [ ] Bidirectional serial: switch `-serial file:` to a chardev socket so a new `qemu_serial_send` tool can write to the guest console; keep the file log
 - [ ] Snapshot tools — `qemu_snapshot_save` / `qemu_snapshot_load` (QMP savevm/loadvm; document the qcow2 requirement)
-- [ ] `machine` parameter on `qemu_boot` (aarch64/riscv64 need `-M virt`; document per-arch examples in README)
+- [x] `machine` parameter on `qemu_boot` (aarch64/riscv64 need `-M virt`; document per-arch examples in README) — added `machine: str | None = None` to `qemu_boot` and `vm.boot`, passed through as QEMU's `-M <machine>` when set; boot confirmation message now shows it. Documented in the tools table and a new "Non-x86 archs" README section with aarch64/riscv64 examples pointing at `machine="virt"`. Verified: `ruff check`, `python -m compileall src`, and all 175 existing tests (`test_keys.py`, `test_vm.py`, `test_stdio_handshake.py`) pass unchanged since none of them call `vm.boot()` directly. Not verified: an actual `-M virt` boot on real aarch64/riscv64 QEMU — needs a local boot test, no QEMU in this environment.
 - [ ] `qemu_wait_screen` — poll screendumps until the framebuffer stops changing (boot-settled detection for VGA-only guests)
 
 ## Quality
