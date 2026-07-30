@@ -17,6 +17,7 @@ EXPECTED_TOOLS = {
     "qemu_screenshot",
     "qemu_type",
     "qemu_key",
+    "qemu_mouse",
     "qemu_serial",
     "qemu_wait_serial",
     "qemu_list",

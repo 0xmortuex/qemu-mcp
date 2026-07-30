@@ -34,6 +34,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
 | `qemu_key` | Press a key or chord: `enter`, `esc`, `f12`, `ctrl-alt-f2`… |
+| `qemu_mouse` | Move the absolute pointer (fractions of screen width/height) and optionally click `left`/`right`/`middle` |
 | `qemu_serial` | Tail the serial console (COM1) output |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout |
 | `qemu_list` | All managed VMs with state, pid, uptime |
@@ -110,13 +111,14 @@ Check `qemu-system-<arch> -M help` for the full list of machines an arch support
 [![CI](https://github.com/0xmortuex/qemu-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmortuex/qemu-mcp/actions/workflows/ci.yml)
 
 Unit tests for the character/key-name -> QMP qcode translation in `keys.py`,
-the missing-binary error path, and an MCP stdio handshake smoke test all
-need no QEMU install - this is what CI runs on every push:
+the screen-fraction -> QMP pointer-event translation in `mouse.py`, the
+missing-binary error path, and an MCP stdio handshake smoke test all need no
+QEMU install - this is what CI runs on every push:
 
 ```bash
 pip install -e ".[test]"
 ruff check src tests
-pytest tests/test_keys.py tests/test_vm.py tests/test_stdio_handshake.py
+pytest tests/test_keys.py tests/test_mouse.py tests/test_vm.py tests/test_stdio_handshake.py
 ```
 
 There's also an end-to-end test that boots a real ISO and exercises every tool:

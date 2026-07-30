@@ -10,6 +10,7 @@ import time
 from mcp.server.fastmcp import FastMCP, Image
 
 from . import keys as keymod
+from . import mouse as mousemod
 from . import vm as vmmod
 
 mcp = FastMCP(
@@ -112,6 +113,23 @@ def qemu_key(name: str, combo: str) -> str:
     qcodes = keymod.parse_combo(combo)
     vm.qmp.command("send-key", keys=[{"type": "qcode", "data": q} for q in qcodes])
     return f"pressed {combo} in {name!r}"
+
+
+@mcp.tool()
+def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
+    """Move the absolute pointer and optionally click.
+
+    x and y are fractions of the screen width/height (0.0 = left/top, 1.0 =
+    right/bottom) - read them off a qemu_screenshot. button is "left",
+    "right", or "middle" for a full click at that position; omit it to just
+    move the pointer. Needs the guest to have an absolute pointer (USB
+    tablet or PS/2 mouse) to track it - most GUIs have one by default.
+    """
+    vm = vmmod.get_vm(name)
+    events = mousemod.click_events(x, y, button) if button else mousemod.move_events(x, y)
+    vm.qmp.command("input-send-event", events=events)
+    action = f"clicked {button}" if button else "moved"
+    return f"{action} at ({x:.2f}, {y:.2f}) in {name!r}"
 
 
 @mcp.tool()
