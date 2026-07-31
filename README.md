@@ -35,6 +35,8 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
 | `qemu_key` | Press a key or chord: `enter`, `esc`, `f12`, `ctrl-alt-f2`… |
 | `qemu_mouse` | Move the absolute pointer (fractions of screen width/height) and optionally click `left`/`right`/`middle` |
+| `qemu_snapshot_save` | Save a full RAM+device snapshot under a tag (needs a qcow2 disk) |
+| `qemu_snapshot_load` | Restore a VM to a previously saved snapshot tag |
 | `qemu_serial` | Tail the serial console (COM1) output |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout |
 | `qemu_list` | All managed VMs with state, pid, uptime |

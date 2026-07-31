@@ -20,4 +20,4 @@ jobs:
       - run: pip install "ruff==0.16.0" ".[test]"
       - run: ruff check src tests
       - name: pytest (unit tests + stdio handshake, no QEMU)
-        run: pytest tests/test_keys.py tests/test_mouse.py tests/test_vm.py tests/test_stdio_handshake.py -v
+        run: pytest tests/test_keys.py tests/test_mouse.py tests/test_snapshot.py tests/test_vm.py tests/test_stdio_handshake.py -v

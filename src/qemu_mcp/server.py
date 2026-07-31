@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 from . import keys as keymod
 from . import mouse as mousemod
+from . import snapshot as snapmod
 from . import vm as vmmod
 
 mcp = FastMCP(
@@ -43,7 +44,8 @@ def qemu_boot(
     """Boot a QEMU VM headless and register it under `name`.
 
     Provide at least one of: iso (bootable CD image), kernel (multiboot/bzImage,
-    optionally with append/initrd), or disk (raw disk image). arch picks the
+    optionally with append/initrd), or disk (raw or qcow2 disk image, auto-detected;
+    qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). arch picks the
     qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...). machine is
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
     have no default machine and need e.g. machine="virt". extra_args is passed
@@ -130,6 +132,31 @@ def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
     vm.qmp.command("input-send-event", events=events)
     action = f"clicked {button}" if button else "moved"
     return f"{action} at ({x:.2f}, {y:.2f}) in {name!r}"
+
+
+@mcp.tool()
+def qemu_snapshot_save(name: str, tag: str) -> str:
+    """Save a full VM snapshot (RAM + device state) under `tag`.
+
+    Uses QEMU's internal savevm mechanism, which stores the snapshot inside
+    the disk image itself - the VM's disk must be qcow2 (raw images do not
+    support internal snapshots). Saving again with the same tag overwrites
+    it. tag may only contain letters, digits, '.', '_', '-'.
+    """
+    vm = vmmod.get_vm(name)
+    vm.qmp.command("human-monitor-command", **{"command-line": snapmod.save_command_line(tag)})
+    return f"saved snapshot {tag!r} for VM {name!r}"
+
+
+@mcp.tool()
+def qemu_snapshot_load(name: str, tag: str) -> str:
+    """Restore a VM to a snapshot previously saved with qemu_snapshot_save.
+
+    Requires the same qcow2 disk the snapshot was taken on.
+    """
+    vm = vmmod.get_vm(name)
+    vm.qmp.command("human-monitor-command", **{"command-line": snapmod.load_command_line(tag)})
+    return f"loaded snapshot {tag!r} for VM {name!r}"
 
 
 @mcp.tool()

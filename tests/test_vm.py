@@ -1,4 +1,4 @@
-"""Unit tests for vm.find_qemu's missing-binary error. No QEMU needed."""
+"""Unit tests for vm.find_qemu's missing-binary error and vm.disk_format. No QEMU needed."""
 
 import os
 import stat
@@ -53,3 +53,19 @@ def test_find_qemu_finds_exact_match_on_path(tmp_path, monkeypatch):
     # normcase: shutil.which() resolves the PATHEXT suffix itself on Windows
     # and may return it in a different case (".EXE") than the file we made.
     assert os.path.normcase(vm.find_qemu("x86_64")) == os.path.normcase(path)
+
+
+def test_disk_format_detects_qcow2_magic(tmp_path):
+    path = tmp_path / "disk.img"
+    path.write_bytes(b"QFI\xfbsomeqcow2headerbytes...")
+    assert vm.disk_format(str(path)) == "qcow2"
+
+
+def test_disk_format_defaults_to_raw(tmp_path):
+    path = tmp_path / "disk.img"
+    path.write_bytes(b"\x00" * 512)
+    assert vm.disk_format(str(path)) == "raw"
+
+
+def test_disk_format_missing_file_defaults_to_raw(tmp_path):
+    assert vm.disk_format(str(tmp_path / "does-not-exist.img")) == "raw"

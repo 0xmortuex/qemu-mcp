@@ -67,6 +67,24 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+_QCOW2_MAGIC = b"QFI\xfb"
+
+
+def disk_format(path: str) -> str:
+    """"qcow2" if `path` starts with the qcow2 magic, else "raw".
+
+    Snapshot save/load (savevm/loadvm) only works on qcow2 - if this always
+    said "raw", qemu_boot would silently force every disk into raw mode and
+    qemu_snapshot_save would fail on every qcow2 image passed to it.
+    """
+    try:
+        with open(path, "rb") as f:
+            magic = f.read(len(_QCOW2_MAGIC))
+    except OSError:
+        return "raw"
+    return "qcow2" if magic == _QCOW2_MAGIC else "raw"
+
+
 @dataclass
 class VM:
     name: str
@@ -163,7 +181,7 @@ def boot(
     if initrd:
         args += ["-initrd", initrd]
     if disk:
-        args += ["-drive", f"file={disk},format=raw"]
+        args += ["-drive", f"file={disk},format={disk_format(disk)}"]
     if extra_args:
         args += shlex.split(extra_args, posix=(os.name != "nt"))
 
