@@ -22,6 +22,7 @@ EXPECTED_TOOLS = {
     "qemu_snapshot_load",
     "qemu_serial",
     "qemu_wait_serial",
+    "qemu_wait_screen",
     "qemu_list",
     "qemu_stop",
     "qemu_qmp",

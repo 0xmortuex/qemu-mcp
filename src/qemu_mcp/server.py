@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 from . import keys as keymod
 from . import mouse as mousemod
+from . import screen as screenmod
 from . import snapshot as snapmod
 from . import vm as vmmod
 
@@ -187,6 +188,38 @@ def qemu_wait_serial(name: str, text: str, timeout_s: int = 30) -> str:
             return "VM EXITED\n" + vmmod.tail(out, 20)
         time.sleep(0.25)
     return "TIMEOUT\n" + vmmod.tail(vm.serial_text(), 20)
+
+
+@mcp.tool()
+def qemu_wait_screen(
+    name: str, timeout_s: int = 30, poll_interval_s: float = 1.0, stable_polls: int = 3
+) -> str:
+    """Block until the VM's display stops changing, or time out.
+
+    Polls screendumps every poll_interval_s and waits for `stable_polls`
+    consecutive identical frames - the reliable way to know a VGA-only
+    guest (no serial output) has finished a BIOS splash or boot animation
+    before you screenshot or type. For guests with serial output, prefer
+    qemu_wait_serial - it doesn't need a fixed number of polls to decide.
+    """
+    vm = vmmod.get_vm(name)
+    tracker = screenmod.StabilityTracker(stable_polls)
+    ppm = os.path.join(vm.workdir, "wait_screen.ppm")
+    deadline = time.monotonic() + timeout_s
+    polls = 0
+    while time.monotonic() < deadline:
+        vm.qmp.command("screendump", filename=ppm)
+        for _ in range(20):
+            if os.path.isfile(ppm) and os.path.getsize(ppm) > 0:
+                break
+            time.sleep(0.05)
+        polls += 1
+        if tracker.update(screenmod.hash_file(ppm)):
+            return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
+        if not vm.running:
+            return f"VM EXITED after {polls} polls"
+        time.sleep(poll_interval_s)
+    return f"TIMEOUT after {timeout_s}s ({polls} polls)"
 
 
 @mcp.tool()
