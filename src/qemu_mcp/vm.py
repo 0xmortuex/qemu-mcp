@@ -64,7 +64,8 @@ def find_qemu(arch: str) -> str:
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+        port: int = s.getsockname()[1]
+        return port
 
 
 _QCOW2_MAGIC = b"QFI\xfb"
@@ -88,7 +89,7 @@ def disk_format(path: str) -> str:
 @dataclass
 class VM:
     name: str
-    proc: subprocess.Popen
+    proc: subprocess.Popen[bytes]
     qmp: QMPClient
     workdir: str
     serial_path: str

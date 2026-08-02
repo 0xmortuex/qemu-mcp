@@ -6,6 +6,7 @@ import io
 import json
 import os
 import time
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP, Image
 
@@ -251,7 +252,7 @@ def qemu_stop(name: str, force: bool = False) -> str:
 
 
 @mcp.tool()
-def qemu_qmp(name: str, command: str, arguments: dict | None = None) -> str:
+def qemu_qmp(name: str, command: str, arguments: dict[str, Any] | None = None) -> str:
     """Escape hatch: run a raw QMP command on the VM.
 
     Examples: query-status, system_reset, memsave, device_add. See the QEMU

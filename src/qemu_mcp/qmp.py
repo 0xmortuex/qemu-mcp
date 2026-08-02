@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import socket
 import time
+from typing import Any
 
 
 class QMPError(RuntimeError):
@@ -38,17 +39,22 @@ class QMPClient:
         self._read_msg()  # greeting
         self.command("qmp_capabilities")
 
-    def _read_msg(self) -> dict:
+    def _read_msg(self) -> dict[str, Any]:
+        if self.sock is None:
+            raise QMPError("QMP connection is closed")
         while b"\n" not in self._buf:
             chunk = self.sock.recv(65536)
             if not chunk:
                 raise QMPError("QMP connection closed by QEMU")
             self._buf += chunk
         line, self._buf = self._buf.split(b"\n", 1)
-        return json.loads(line)
+        result: dict[str, Any] = json.loads(line)
+        return result
 
-    def command(self, name: str, **arguments):
-        msg: dict = {"execute": name}
+    def command(self, name: str, **arguments: Any) -> Any:
+        if self.sock is None:
+            raise QMPError("QMP connection is closed")
+        msg: dict[str, Any] = {"execute": name}
         if arguments:
             msg["arguments"] = arguments
         self.sock.sendall(json.dumps(msg).encode() + b"\n")
