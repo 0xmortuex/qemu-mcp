@@ -47,6 +47,8 @@ with open(OUT.replace(".png", "-2.png"), "wb") as f:
     f.write(shot2.data)
 print(f"screenshot 2: {len(shot2.data)} bytes")
 
+print(server.qemu_serial_send(name="smoke", text="\n"))
+time.sleep(1)
 print("serial tail:", server.qemu_serial(name="smoke", tail_lines=5)[:400])
 print(server.qemu_qmp(name="smoke", command="query-status"))
 print(server.qemu_stop(name="smoke", force=True))

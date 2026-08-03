@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 
 from .qmp import QMPClient, QMPError
+from .serial import SerialConsole, chardev_args
 
 _WINDOWS_QEMU_DIRS = [
     r"C:\Program Files\qemu",
@@ -93,6 +94,7 @@ class VM:
     qmp: QMPClient
     workdir: str
     serial_path: str
+    serial_console: SerialConsole
     qemu_log: str
     cmdline: list[str]
     started_at: float = field(default_factory=time.monotonic)
@@ -159,6 +161,7 @@ def boot(
 
     qemu = find_qemu(arch)
     port = _free_port()
+    serial_port = _free_port()
     workdir = tempfile.mkdtemp(prefix=f"qemu-mcp-{name}-")
     serial_path = os.path.join(workdir, "serial.log")
     qemu_log = os.path.join(workdir, "qemu.log")
@@ -169,7 +172,7 @@ def boot(
         "-m", str(memory_mb),
         "-display", "none",
         "-qmp", f"tcp:127.0.0.1:{port},server,nowait",
-        "-serial", f"file:{serial_path}",
+        *chardev_args(serial_path, serial_port),
     ]
     if machine:
         args += ["-M", machine]
@@ -204,7 +207,8 @@ def boot(
 
     vm = VM(
         name=name, proc=proc, qmp=qmp, workdir=workdir,
-        serial_path=serial_path, qemu_log=qemu_log, cmdline=args,
+        serial_path=serial_path, serial_console=SerialConsole(serial_port),
+        qemu_log=qemu_log, cmdline=args,
     )
     _vms[name] = vm
     return vm
@@ -237,5 +241,6 @@ def stop(name: str, force: bool) -> str:
                 vm.proc.kill()
             outcome = "killed" if force else "ACPI ignored, killed"
     vm.qmp.close()
+    vm.serial_console.close()
     del _vms[name]
     return outcome

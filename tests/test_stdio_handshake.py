@@ -21,6 +21,7 @@ EXPECTED_TOOLS = {
     "qemu_snapshot_save",
     "qemu_snapshot_load",
     "qemu_serial",
+    "qemu_serial_send",
     "qemu_wait_serial",
     "qemu_wait_screen",
     "qemu_list",

@@ -20,7 +20,7 @@ It's equally useful for anyone who needs an agent to poke at a VM below the OS l
 
 The existing ones assume a *full, running guest OS* — they exec commands over SSH or a guest agent. That's useless when your guest is a 40 KB kernel you wrote yourself, an installer ISO, or anything pre-boot. qemu-mcp is built for the boot-test loop instead:
 
-- **Serial console capture** — continuously logged to a file, readable at any time (`qemu_serial`)
+- **Serial console capture** — continuously logged to a file, readable at any time (`qemu_serial`), and writable too (`qemu_serial_send`)
 - **`qemu_wait_serial`** — block until `"kernel ready"` (or `"login:"`, or your panic string) appears, the reliable way to sequence an automated boot test
 - **`-kernel` boot** — boot a multiboot/bzImage kernel directly, with `append`/`initrd`
 - **Screenshots of the VGA framebuffer** — works headless, shows exactly what a monitor would
@@ -38,6 +38,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_snapshot_save` | Save a full RAM+device snapshot under a tag (needs a qcow2 disk) |
 | `qemu_snapshot_load` | Restore a VM to a previously saved snapshot tag |
 | `qemu_serial` | Tail the serial console (COM1) output |
+| `qemu_serial_send` | Write text to the serial console (COM1) |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout |
 | `qemu_wait_screen` | Block until the display stops changing (for VGA-only guests with no serial output), or timeout |
 | `qemu_list` | All managed VMs with state, pid, uptime |
@@ -91,7 +92,7 @@ A typical kernel test the agent can run by itself:
 qemu_boot(name="k", kernel="build/kernel.elf", arch="i386",
           extra_args="-device rtl8139,netdev=n0 -netdev user,id=n0")
 qemu_wait_serial(name="k", text="MORTNET READY", timeout_s=20)
-qemu_type(name="k", text="net\n")
+qemu_serial_send(name="k", text="net\n")  # guest has no keyboard driver, only a serial shell
 qemu_serial(name="k")          # did DHCP bind?
 qemu_screenshot(name="k")      # what does the console show?
 ```
@@ -115,13 +116,14 @@ Check `qemu-system-<arch> -M help` for the full list of machines an arch support
 
 Unit tests for the character/key-name -> QMP qcode translation in `keys.py`,
 the screen-fraction -> QMP pointer-event translation in `mouse.py`, the
-missing-binary error path, and an MCP stdio handshake smoke test all need no
-QEMU install - this is what CI runs on every push:
+serial chardev args and reconnect logic in `serial.py`, the missing-binary
+error path, and an MCP stdio handshake smoke test all need no QEMU install -
+this is what CI runs on every push:
 
 ```bash
 pip install -e ".[test]"
 ruff check src tests
-pytest tests/test_keys.py tests/test_mouse.py tests/test_vm.py tests/test_stdio_handshake.py
+pytest tests/test_keys.py tests/test_mouse.py tests/test_serial.py tests/test_vm.py tests/test_stdio_handshake.py
 ```
 
 There's also an end-to-end test that boots a real ISO and exercises every tool:

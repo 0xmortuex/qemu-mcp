@@ -172,6 +172,21 @@ def qemu_serial(name: str, tail_lines: int = 50) -> str:
 
 
 @mcp.tool()
+def qemu_serial_send(name: str, text: str) -> str:
+    """Write text to the guest's serial console (COM1).
+
+    For guests that only expose a shell over serial (no VGA console, or a
+    kernel with a serial-only debug shell) - the bidirectional counterpart
+    to qemu_serial's read-only tail. Sent exactly as given; include "\\n"
+    yourself for Enter. Kept on one persistent connection for the VM's
+    lifetime - disconnecting and reconnecting would hang up the serial line.
+    """
+    vm = vmmod.get_vm(name)
+    vm.serial_console.send(text)
+    return f"sent {len(text)} bytes to {name!r}'s serial console"
+
+
+@mcp.tool()
 def qemu_wait_serial(name: str, text: str, timeout_s: int = 30) -> str:
     """Block until `text` appears on the serial console, or time out.
 
