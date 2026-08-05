@@ -6,7 +6,7 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "0xmortuex" }]
 requires-python = ">=3.10"
-dependencies = ["mcp>=1.2.0,<2.0.0", "pillow>=10.0"]
+dependencies = ["mcp>=2.0.0", "pillow>=10.0"]
 keywords = ["mcp", "qemu", "osdev", "virtual-machine", "ai-agent"]
 classifiers = [
     "Development Status :: 4 - Beta",

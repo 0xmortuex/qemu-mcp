@@ -8,7 +8,7 @@ import os
 import time
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP, Image
+from mcp.server.mcpserver import Image, MCPServer
 
 from . import keys as keymod
 from . import mouse as mousemod
@@ -16,7 +16,7 @@ from . import screen as screenmod
 from . import snapshot as snapmod
 from . import vm as vmmod
 
-mcp = FastMCP(
+mcp = MCPServer(
     "qemu",
     instructions=(
         "Boot and drive QEMU virtual machines: boot an ISO/kernel/disk, "
