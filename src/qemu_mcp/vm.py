@@ -243,4 +243,5 @@ def stop(name: str, force: bool) -> str:
     vm.qmp.close()
     vm.serial_console.close()
     del _vms[name]
+    shutil.rmtree(vm.workdir, ignore_errors=True)
     return outcome

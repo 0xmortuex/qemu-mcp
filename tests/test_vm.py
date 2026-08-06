@@ -69,3 +69,61 @@ def test_disk_format_defaults_to_raw(tmp_path):
 
 def test_disk_format_missing_file_defaults_to_raw(tmp_path):
     assert vm.disk_format(str(tmp_path / "does-not-exist.img")) == "raw"
+
+
+class _FakeProc:
+    """Stands in for subprocess.Popen: already exited, no real process involved."""
+
+    returncode = 0
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def kill(self):
+        pass
+
+
+class _FakeQMP:
+    def command(self, name, **kwargs):
+        raise vm.QMPError("no real QEMU in this test")
+
+    def close(self):
+        pass
+
+
+class _FakeSerial:
+    def close(self):
+        pass
+
+
+def _register_fake_vm(name, workdir):
+    fake = vm.VM(
+        name=name,
+        proc=_FakeProc(),
+        qmp=_FakeQMP(),
+        workdir=str(workdir),
+        serial_path=str(workdir / "serial.log"),
+        serial_console=_FakeSerial(),
+        qemu_log=str(workdir / "qemu.log"),
+        cmdline=["qemu-system-x86_64"],
+    )
+    vm._vms[name] = fake
+    return fake
+
+
+def test_stop_removes_the_vm_workdir(tmp_path):
+    workdir = tmp_path / "qemu-mcp-test"
+    workdir.mkdir()
+    (workdir / "serial.log").write_text("hello")
+    _register_fake_vm("cleanup-test", workdir)
+
+    try:
+        outcome = vm.stop("cleanup-test", force=True)
+    finally:
+        vm._vms.pop("cleanup-test", None)
+
+    assert outcome == "already exited"
+    assert not workdir.exists()
