@@ -199,10 +199,14 @@ def boot(
             log.close()
             with open(qemu_log, encoding="utf-8", errors="replace") as f:
                 detail = f.read().strip()
+            shutil.rmtree(workdir, ignore_errors=True)
             raise RuntimeError(
                 f"QEMU exited immediately (code {proc.returncode}):\n{detail}"
             ) from None
         proc.kill()
+        proc.wait()
+        log.close()
+        shutil.rmtree(workdir, ignore_errors=True)
         raise
 
     vm = VM(

@@ -3,6 +3,9 @@
 import os
 import stat
 import sys
+import time
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -127,3 +130,83 @@ def test_stop_removes_the_vm_workdir(tmp_path):
 
     assert outcome == "already exited"
     assert not workdir.exists()
+
+
+def _make_fake_qemu_script(directory, body):
+    """A fake qemu-system-x86_64 that runs `body` instead of real QEMU."""
+    name = "qemu-system-x86_64"
+    path = os.path.join(directory, name)
+    with open(path, "w") as f:
+        f.write(f"#!/bin/sh\n{body}\n")
+    os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
+    return path
+
+
+class _RaisingQMPClient:
+    """Stands in for QMPClient: always fails to connect, after a short delay
+    so the "QEMU exited immediately" branch's proc.poll() check is reliable."""
+
+    def __init__(self, port, connect_timeout=20.0):
+        time.sleep(0.3)
+        raise vm.QMPError("simulated: QMP never came up")
+
+
+def _track_mkdtemp(monkeypatch):
+    """Record every workdir vm.boot() creates via tempfile.mkdtemp, so a test
+    can assert it was cleaned up without vm.boot() returning it on failure."""
+    created = []
+    orig = vm.tempfile.mkdtemp
+
+    def _tracking(*args, **kwargs):
+        d = orig(*args, **kwargs)
+        created.append(d)
+        return d
+
+    monkeypatch.setattr(vm.tempfile, "mkdtemp", _tracking)
+    return created
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_cleans_up_workdir_when_qemu_exits_immediately(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 1")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(vm, "QMPClient", _RaisingQMPClient)
+    created = _track_mkdtemp(monkeypatch)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        vm.boot(
+            name="boot-fail-immediate", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "QEMU exited immediately" in str(e)
+
+    assert "boot-fail-immediate" not in vm._vms
+    assert created and not os.path.exists(created[-1])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_cleans_up_workdir_when_qmp_never_connects(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "sleep 5")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setattr(vm, "QMPClient", _RaisingQMPClient)
+    created = _track_mkdtemp(monkeypatch)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        vm.boot(
+            name="boot-fail-hang", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected QMPError"
+    except vm.QMPError:
+        pass
+
+    assert "boot-fail-hang" not in vm._vms
+    assert created and not os.path.exists(created[-1])
