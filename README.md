@@ -41,7 +41,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_serial_send` | Write text to the serial console (COM1) |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout |
 | `qemu_wait_screen` | Block until the display stops changing (for VGA-only guests with no serial output), or timeout |
-| `qemu_list` | All managed VMs with state, pid, uptime |
+| `qemu_list` | All managed VMs with state, arch, machine, pid, uptime |
 | `qemu_stop` | Graceful ACPI powerdown, or `force=true` to kill |
 | `qemu_qmp` | Run any raw QMP command on the VM |
 

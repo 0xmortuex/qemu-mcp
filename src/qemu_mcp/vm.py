@@ -97,6 +97,8 @@ class VM:
     serial_console: SerialConsole
     qemu_log: str
     cmdline: list[str]
+    arch: str
+    machine: str | None = None
     started_at: float = field(default_factory=time.monotonic)
 
     @property
@@ -212,7 +214,7 @@ def boot(
     vm = VM(
         name=name, proc=proc, qmp=qmp, workdir=workdir,
         serial_path=serial_path, serial_console=SerialConsole(serial_port),
-        qemu_log=qemu_log, cmdline=args,
+        qemu_log=qemu_log, cmdline=args, arch=arch, machine=machine,
     )
     _vms[name] = vm
     return vm

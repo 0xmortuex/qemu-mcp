@@ -78,6 +78,7 @@ class _FakeProc:
     """Stands in for subprocess.Popen: already exited, no real process involved."""
 
     returncode = 0
+    pid = -1
 
     def poll(self):
         return self.returncode
@@ -102,7 +103,7 @@ class _FakeSerial:
         pass
 
 
-def _register_fake_vm(name, workdir):
+def _register_fake_vm(name, workdir, arch="x86_64", machine=None):
     fake = vm.VM(
         name=name,
         proc=_FakeProc(),
@@ -112,6 +113,8 @@ def _register_fake_vm(name, workdir):
         serial_console=_FakeSerial(),
         qemu_log=str(workdir / "qemu.log"),
         cmdline=["qemu-system-x86_64"],
+        arch=arch,
+        machine=machine,
     )
     vm._vms[name] = fake
     return fake
@@ -130,6 +133,40 @@ def test_stop_removes_the_vm_workdir(tmp_path):
 
     assert outcome == "already exited"
     assert not workdir.exists()
+
+
+def test_qemu_list_reports_arch_and_machine(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-list-test"
+    workdir.mkdir()
+    _register_fake_vm("list-test", workdir, arch="aarch64", machine="virt")
+
+    try:
+        rows = server.qemu_list()
+    finally:
+        vm._vms.pop("list-test", None)
+
+    assert "list-test" in rows
+    assert "aarch64" in rows
+    assert "-M virt" in rows
+
+
+def test_qemu_list_omits_machine_note_when_unset(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-list-test2"
+    workdir.mkdir()
+    _register_fake_vm("list-test2", workdir, arch="x86_64", machine=None)
+
+    try:
+        rows = server.qemu_list()
+    finally:
+        vm._vms.pop("list-test2", None)
+
+    line = next(r for r in rows.splitlines() if r.startswith("list-test2:"))
+    assert "x86_64" in line
+    assert "-M" not in line
 
 
 def _make_fake_qemu_script(directory, body):

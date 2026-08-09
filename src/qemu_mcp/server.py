@@ -240,15 +240,16 @@ def qemu_wait_screen(
 
 @mcp.tool()
 def qemu_list() -> str:
-    """List all VMs managed by this server, with pid, uptime, and state."""
+    """List all VMs managed by this server, with arch, machine, pid, uptime, and state."""
     vms = vmmod.list_vms()
     if not vms:
         return "no VMs"
     rows = []
     for vm in vms:
         state = "running" if vm.running else f"exited({vm.proc.returncode})"
+        machine_note = f" -M {vm.machine}" if vm.machine else ""
         rows.append(
-            f"{vm.name}: {state}, pid {vm.proc.pid}, "
+            f"{vm.name}: {state}, {vm.arch}{machine_note}, pid {vm.proc.pid}, "
             f"up {int(time.monotonic() - vm.started_at)}s, "
             f"serial {os.path.getsize(vm.serial_path) if os.path.isfile(vm.serial_path) else 0} bytes"
         )
