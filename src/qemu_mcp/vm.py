@@ -149,6 +149,12 @@ def boot(
     extra_args: str | None,
     machine: str | None = None,
 ) -> VM:
+    if not name or "/" in name or "\\" in name or name in (".", ".."):
+        raise ValueError(
+            f"invalid VM name {name!r}: must be non-empty with no path separators "
+            "(it names a temp directory and the QEMU -name flag)"
+        )
+
     stale = _vms.get(name)
     if stale is not None:
         if stale.running:

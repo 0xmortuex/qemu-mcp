@@ -74,6 +74,19 @@ def test_disk_format_missing_file_defaults_to_raw(tmp_path):
     assert vm.disk_format(str(tmp_path / "does-not-exist.img")) == "raw"
 
 
+@pytest.mark.parametrize("name", ["", "foo/bar", "foo\\bar", ".", ".."])
+def test_boot_rejects_invalid_names(name):
+    try:
+        vm.boot(
+            name=name, arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(name) in str(e)
+
+
 class _FakeProc:
     """Stands in for subprocess.Popen: already exited, no real process involved."""
 

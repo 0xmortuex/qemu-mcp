@@ -45,6 +45,9 @@ def qemu_boot(
 ) -> str:
     """Boot a QEMU VM headless and register it under `name`.
 
+    name identifies this VM in all later calls (qemu_screenshot, qemu_stop,
+    etc.) - it must be non-empty and contain no "/" or "\\" (it also names a
+    temp directory and is passed to QEMU's -name flag).
     Provide at least one of: iso (bootable CD image), kernel (multiboot/bzImage,
     optionally with append/initrd), or disk (raw or qcow2 disk image, auto-detected;
     qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). arch picks the
