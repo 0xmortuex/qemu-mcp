@@ -43,7 +43,12 @@ class QMPClient:
         if self.sock is None:
             raise QMPError("QMP connection is closed")
         while b"\n" not in self._buf:
-            chunk = self.sock.recv(65536)
+            try:
+                chunk = self.sock.recv(65536)
+            except TimeoutError:
+                raise QMPError("QMP read timed out - QEMU stopped responding") from None
+            except OSError as e:
+                raise QMPError(f"QMP connection error: {e}") from None
             if not chunk:
                 raise QMPError("QMP connection closed by QEMU")
             self._buf += chunk
@@ -57,7 +62,10 @@ class QMPClient:
         msg: dict[str, Any] = {"execute": name}
         if arguments:
             msg["arguments"] = arguments
-        self.sock.sendall(json.dumps(msg).encode() + b"\n")
+        try:
+            self.sock.sendall(json.dumps(msg).encode() + b"\n")
+        except OSError as e:
+            raise QMPError(f"QMP connection error: {e}") from None
         while True:
             resp = self._read_msg()
             if "return" in resp:

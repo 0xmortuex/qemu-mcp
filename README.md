@@ -118,15 +118,15 @@ Unit tests for the character/key-name -> QMP qcode translation in `keys.py`,
 the screen-fraction -> QMP pointer-event translation in `mouse.py`, the
 serial chardev args and reconnect logic in `serial.py`, the framebuffer
 stability tracker in `screen.py`, the snapshot tag validation and HMP
-command-line building in `snapshot.py`, the missing-binary error path, and
-an MCP stdio handshake smoke test all need no QEMU install - this is what
-CI runs on every push:
+command-line building in `snapshot.py`, the QMP client's error handling in
+`qmp.py`, the missing-binary error path, and an MCP stdio handshake smoke
+test all need no QEMU install - this is what CI runs on every push:
 
 ```bash
 pip install -e ".[test]"
 ruff check src tests
 mypy --strict src
-pytest tests/test_keys.py tests/test_mouse.py tests/test_screen.py tests/test_snapshot.py tests/test_serial.py tests/test_vm.py tests/test_stdio_handshake.py
+pytest tests/test_keys.py tests/test_mouse.py tests/test_screen.py tests/test_snapshot.py tests/test_serial.py tests/test_qmp.py tests/test_vm.py tests/test_stdio_handshake.py
 ```
 
 There's also an end-to-end test that boots a real ISO and exercises every tool:
