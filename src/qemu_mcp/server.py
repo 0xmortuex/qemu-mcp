@@ -50,7 +50,8 @@ def qemu_boot(
     temp directory and is passed to QEMU's -name flag).
     Provide at least one of: iso (bootable CD image), kernel (multiboot/bzImage,
     optionally with append/initrd), or disk (raw or qcow2 disk image, auto-detected;
-    qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). arch picks the
+    qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). memory_mb must
+    be positive. arch picks the
     qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...). machine is
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
     have no default machine and need e.g. machine="virt". extra_args is passed

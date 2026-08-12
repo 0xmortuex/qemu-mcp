@@ -154,6 +154,10 @@ def boot(
             f"invalid VM name {name!r}: must be non-empty with no path separators "
             "(it names a temp directory and the QEMU -name flag)"
         )
+    if memory_mb <= 0:
+        raise ValueError(
+            f"invalid memory_mb {memory_mb!r}: must be a positive number of megabytes"
+        )
 
     stale = _vms.get(name)
     if stale is not None:

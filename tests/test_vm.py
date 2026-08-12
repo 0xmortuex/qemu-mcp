@@ -87,6 +87,19 @@ def test_boot_rejects_invalid_names(name):
         assert repr(name) in str(e)
 
 
+@pytest.mark.parametrize("memory_mb", [0, -1, -256])
+def test_boot_rejects_non_positive_memory_mb(memory_mb):
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=memory_mb,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(memory_mb) in str(e)
+
+
 class _FakeProc:
     """Stands in for subprocess.Popen: already exited, no real process involved."""
 
