@@ -148,6 +148,8 @@ def boot(
     disk: str | None,
     extra_args: str | None,
     machine: str | None = None,
+    qmp_connect_timeout_s: float = 20.0,
+    qmp_read_timeout_s: float = 15.0,
 ) -> VM:
     if not name or "/" in name or "\\" in name or name in (".", ".."):
         raise ValueError(
@@ -205,7 +207,7 @@ def boot(
     proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
 
     try:
-        qmp = QMPClient(port)
+        qmp = QMPClient(port, connect_timeout=qmp_connect_timeout_s, read_timeout=qmp_read_timeout_s)
     except QMPError:
         if proc.poll() is not None:
             log.close()

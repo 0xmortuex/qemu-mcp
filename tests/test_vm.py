@@ -1,6 +1,7 @@
 """Unit tests for vm.find_qemu's missing-binary error and vm.disk_format. No QEMU needed."""
 
 import os
+import shutil
 import stat
 import sys
 import time
@@ -209,7 +210,7 @@ class _RaisingQMPClient:
     """Stands in for QMPClient: always fails to connect, after a short delay
     so the "QEMU exited immediately" branch's proc.poll() check is reliable."""
 
-    def __init__(self, port, connect_timeout=20.0):
+    def __init__(self, port, connect_timeout=20.0, read_timeout=15.0):
         time.sleep(0.3)
         raise vm.QMPError("simulated: QMP never came up")
 
@@ -273,3 +274,44 @@ def test_boot_cleans_up_workdir_when_qmp_never_connects(tmp_path, monkeypatch):
 
     assert "boot-fail-hang" not in vm._vms
     assert created and not os.path.exists(created[-1])
+
+
+class _RecordingQMPClient:
+    """Stands in for QMPClient: records the timeout kwargs it was constructed
+    with instead of actually connecting, so a test can assert vm.boot()
+    threads qmp_connect_timeout_s/qmp_read_timeout_s through correctly."""
+
+    calls = []
+
+    def __init__(self, port, connect_timeout=20.0, read_timeout=15.0):
+        _RecordingQMPClient.calls.append((connect_timeout, read_timeout))
+
+    def command(self, name, **kwargs):
+        return {}
+
+    def close(self):
+        pass
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_passes_qmp_timeouts_through_to_qmpclient(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        vm.boot(
+            name="boot-custom-timeouts", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+            qmp_connect_timeout_s=5.0, qmp_read_timeout_s=2.0,
+        )
+        assert _RecordingQMPClient.calls == [(5.0, 2.0)]
+    finally:
+        booted = vm._vms.pop("boot-custom-timeouts", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)

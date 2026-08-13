@@ -30,7 +30,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 
 | Tool | What it does |
 |------|--------------|
-| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), arbitrary extra QEMU args (networking, devices…) |
+| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
 | `qemu_key` | Press a key or chord: `enter`, `esc`, `f12`, `ctrl-alt-f2`… |

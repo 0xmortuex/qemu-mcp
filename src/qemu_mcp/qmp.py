@@ -19,7 +19,7 @@ class QMPError(RuntimeError):
 
 
 class QMPClient:
-    def __init__(self, port: int, connect_timeout: float = 20.0):
+    def __init__(self, port: int, connect_timeout: float = 20.0, read_timeout: float = 15.0):
         # First launch of QEMU on a cold machine can take a long time
         # (AV scanning), so retry-connect instead of one-shot.
         deadline = time.monotonic() + connect_timeout
@@ -34,7 +34,7 @@ class QMPClient:
                 time.sleep(0.2)
         if self.sock is None:
             raise QMPError(f"could not connect to QMP on 127.0.0.1:{port}: {last_err}")
-        self.sock.settimeout(15)
+        self.sock.settimeout(read_timeout)
         self._buf = b""
         self._read_msg()  # greeting
         self.command("qmp_capabilities")

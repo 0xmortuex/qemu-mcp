@@ -51,6 +51,20 @@ def test_command_wraps_a_read_timeout_in_qmp_error():
         server.close()
 
 
+def test_read_timeout_is_configurable_via_constructor():
+    hold_open = threading.Event()
+    server, port = _fake_qmp_server(hold_open)
+    try:
+        client = QMPClient(port, read_timeout=0.2)
+        assert client.sock.gettimeout() == 0.2
+        with pytest.raises(QMPError, match="timed out"):
+            client.command("query-status")
+    finally:
+        hold_open.set()
+        client.close()
+        server.close()
+
+
 def test_command_wraps_a_send_error_in_qmp_error():
     client = QMPClient.__new__(QMPClient)
     client.sock = _RaisingSocket()

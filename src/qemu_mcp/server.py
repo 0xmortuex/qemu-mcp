@@ -42,6 +42,8 @@ def qemu_boot(
     memory_mb: int = 256,
     extra_args: str | None = None,
     machine: str | None = None,
+    qmp_connect_timeout_s: float = 20.0,
+    qmp_read_timeout_s: float = 15.0,
 ) -> str:
     """Boot a QEMU VM headless and register it under `name`.
 
@@ -56,9 +58,18 @@ def qemu_boot(
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
     have no default machine and need e.g. machine="virt". extra_args is passed
     to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0".
+    qmp_connect_timeout_s bounds how long to retry connecting to QEMU's QMP
+    socket after launch (raise it on a slow/loaded host where QEMU's first
+    launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how
+    long any single QMP command (including ones issued by other qemu_* tools
+    for this VM, like qemu_qmp or qemu_snapshot_save) waits for a response -
+    raise it if you expect a command that can legitimately run long.
     The VM keeps running until qemu_stop; serial output is captured continuously.
     """
-    vm = vmmod.boot(name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine)
+    vm = vmmod.boot(
+        name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine,
+        qmp_connect_timeout_s, qmp_read_timeout_s,
+    )
     machine_note = f", -M {machine}" if machine else ""
     return (
         f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB{machine_note}).\n"
