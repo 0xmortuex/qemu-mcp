@@ -162,6 +162,35 @@ def test_stop_removes_the_vm_workdir(tmp_path):
     assert not workdir.exists()
 
 
+class _RunningFakeProc(_FakeProc):
+    def poll(self):
+        return None
+
+
+def test_reap_dead_removes_exited_vms_and_keeps_running_ones(tmp_path):
+    dead_workdir = tmp_path / "dead"
+    dead_workdir.mkdir()
+    _register_fake_vm("dead-vm", dead_workdir)
+
+    alive_workdir = tmp_path / "alive"
+    alive_workdir.mkdir()
+    alive = _register_fake_vm("alive-vm", alive_workdir)
+    alive.proc = _RunningFakeProc()
+
+    try:
+        reaped = vm.reap_dead()
+        assert reaped == ["dead-vm"]
+        assert "dead-vm" not in vm._vms
+        assert not dead_workdir.exists()
+        assert "alive-vm" in vm._vms
+        assert alive_workdir.exists()
+    finally:
+        vm._vms.pop("dead-vm", None)
+        still_alive = vm._vms.pop("alive-vm", None)
+        if still_alive is not None:
+            shutil.rmtree(still_alive.workdir, ignore_errors=True)
+
+
 def test_qemu_list_reports_arch_and_machine(tmp_path):
     from qemu_mcp import server
 
@@ -194,6 +223,26 @@ def test_qemu_list_omits_machine_note_when_unset(tmp_path):
     line = next(r for r in rows.splitlines() if r.startswith("list-test2:"))
     assert "x86_64" in line
     assert "-M" not in line
+
+
+def test_qemu_list_shows_an_exited_vm_once_then_reaps_it(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-reap-test"
+    workdir.mkdir()
+    _register_fake_vm("reap-test", workdir)
+
+    try:
+        first = server.qemu_list()
+        assert "reap-test" in first
+        assert "exited(0)" in first
+        assert not workdir.exists()
+        assert "reap-test" not in vm._vms
+
+        second = server.qemu_list()
+        assert "reap-test" not in second
+    finally:
+        vm._vms.pop("reap-test", None)
 
 
 def _make_fake_qemu_script(directory, body):
@@ -312,6 +361,33 @@ def test_boot_passes_qmp_timeouts_through_to_qmpclient(tmp_path, monkeypatch):
         assert _RecordingQMPClient.calls == [(5.0, 2.0)]
     finally:
         booted = vm._vms.pop("boot-custom-timeouts", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_reaps_a_stale_exited_vm_registered_under_the_same_name(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    stale_workdir = tmp_path / "stale-workdir"
+    stale_workdir.mkdir()
+    _register_fake_vm("reboot-me", stale_workdir)
+
+    try:
+        vm.boot(
+            name="reboot-me", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert not stale_workdir.exists(), "the exited entry's workdir should be reaped"
+        assert vm._vms["reboot-me"].workdir != str(stale_workdir)
+    finally:
+        booted = vm._vms.pop("reboot-me", None)
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)

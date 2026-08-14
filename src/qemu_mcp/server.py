@@ -255,7 +255,12 @@ def qemu_wait_screen(
 
 @mcp.tool()
 def qemu_list() -> str:
-    """List all VMs managed by this server, with arch, machine, pid, uptime, and state."""
+    """List all VMs managed by this server, with arch, machine, pid, uptime, and state.
+
+    A VM that exited on its own (guest panic, or `quit` via qemu_qmp) is
+    shown here once as exited(...), then reaped - its workdir and handles
+    are freed before this call returns, so it won't reappear next time.
+    """
     vms = vmmod.list_vms()
     if not vms:
         return "no VMs"
@@ -268,6 +273,7 @@ def qemu_list() -> str:
             f"up {int(time.monotonic() - vm.started_at)}s, "
             f"serial {os.path.getsize(vm.serial_path) if os.path.isfile(vm.serial_path) else 0} bytes"
         )
+    vmmod.reap_dead()
     return "\n".join(rows)
 
 

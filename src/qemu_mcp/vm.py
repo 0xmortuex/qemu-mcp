@@ -133,6 +133,24 @@ def list_vms() -> list[VM]:
     return list(_vms.values())
 
 
+def reap_dead() -> list[str]:
+    """Drop exited VMs from the registry and free their resources.
+
+    A VM that exits on its own (guest panic, or `quit` sent via the
+    qemu_qmp escape hatch) has no `qemu_stop` call to trigger cleanup, so
+    without this its qmp/serial_console handles and workdir leak until
+    someone notices and stops it explicitly. Called opportunistically from
+    boot() and qemu_list so dead entries get cleaned up on their own.
+    """
+    dead = [name for name, vm in _vms.items() if not vm.running]
+    for name in dead:
+        stale = _vms.pop(name)
+        stale.qmp.close()
+        stale.serial_console.close()
+        shutil.rmtree(stale.workdir, ignore_errors=True)
+    return dead
+
+
 def tail(text: str, lines: int) -> str:
     return "\n".join(text.splitlines()[-lines:])
 
@@ -161,11 +179,10 @@ def boot(
             f"invalid memory_mb {memory_mb!r}: must be a positive number of megabytes"
         )
 
+    reap_dead()
     stale = _vms.get(name)
-    if stale is not None:
-        if stale.running:
-            raise RuntimeError(f"a VM named {name!r} is already running - stop it first")
-        del _vms[name]
+    if stale is not None and stale.running:
+        raise RuntimeError(f"a VM named {name!r} is already running - stop it first")
 
     if not (iso or kernel or disk):
         raise ValueError("nothing to boot: give at least one of iso, kernel, disk")
