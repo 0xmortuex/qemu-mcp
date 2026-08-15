@@ -37,7 +37,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_mouse` | Move the absolute pointer (fractions of screen width/height) and optionally click `left`/`right`/`middle` |
 | `qemu_snapshot_save` | Save a full RAM+device snapshot under a tag (needs a qcow2 disk) |
 | `qemu_snapshot_load` | Restore a VM to a previously saved snapshot tag |
-| `qemu_serial` | Tail the serial console (COM1) output |
+| `qemu_serial` | Tail the serial console (COM1) output — works after the VM has exited too, to see what it printed right before dying |
 | `qemu_serial_send` | Write text to the serial console (COM1) |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout |
 | `qemu_wait_screen` | Block until the display stops changing (for VGA-only guests with no serial output), or timeout |

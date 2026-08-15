@@ -178,12 +178,18 @@ def qemu_snapshot_load(name: str, tag: str) -> str:
 
 @mcp.tool()
 def qemu_serial(name: str, tail_lines: int = 50) -> str:
-    """Read the tail of the VM's serial console output (COM1)."""
-    vm = vmmod.get_vm(name)
+    """Read the tail of the VM's serial console output (COM1).
+
+    Works even after the VM has exited (guest crash, or `quit` via
+    qemu_qmp) so you can see what it printed right before dying - the
+    exited VM stays visible here until qemu_list's next call reaps it.
+    """
+    vm = vmmod.get_vm_any(name)
+    note = f"(VM exited, code {vm.proc.returncode})\n" if not vm.running else ""
     text = vm.serial_text()
     if not text:
-        return "(no serial output yet)"
-    return vmmod.tail(text, tail_lines)
+        return note + "(no serial output yet)"
+    return note + vmmod.tail(text, tail_lines)
 
 
 @mcp.tool()

@@ -245,6 +245,58 @@ def test_qemu_list_shows_an_exited_vm_once_then_reaps_it(tmp_path):
         vm._vms.pop("reap-test", None)
 
 
+def test_get_vm_raises_for_an_exited_vm(tmp_path):
+    workdir = tmp_path / "qemu-mcp-getvm-test"
+    workdir.mkdir()
+    _register_fake_vm("getvm-test", workdir)
+
+    try:
+        try:
+            vm.get_vm("getvm-test")
+            assert False, "expected RuntimeError"
+        except RuntimeError as e:
+            assert "has exited" in str(e)
+    finally:
+        vm._vms.pop("getvm-test", None)
+
+
+def test_get_vm_any_returns_an_exited_vm_without_raising(tmp_path):
+    workdir = tmp_path / "qemu-mcp-getvmany-test"
+    workdir.mkdir()
+    registered = _register_fake_vm("getvmany-test", workdir)
+
+    try:
+        assert vm.get_vm_any("getvmany-test") is registered
+    finally:
+        vm._vms.pop("getvmany-test", None)
+
+
+def test_get_vm_any_raises_keyerror_for_an_unregistered_name():
+    try:
+        vm.get_vm_any("no-such-vm")
+        assert False, "expected KeyError"
+    except KeyError as e:
+        assert "no-such-vm" in str(e)
+
+
+def test_qemu_serial_reads_the_tail_after_the_vm_has_exited(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-serial-exited-test"
+    workdir.mkdir()
+    (workdir / "serial.log").write_text("line one\nline two\n")
+    _register_fake_vm("serial-exited-test", workdir)
+
+    try:
+        out = server.qemu_serial(name="serial-exited-test")
+    finally:
+        vm._vms.pop("serial-exited-test", None)
+
+    assert "VM exited, code 0" in out
+    assert "line one" in out
+    assert "line two" in out
+
+
 def _make_fake_qemu_script(directory, body):
     """A fake qemu-system-x86_64 that runs `body` instead of real QEMU."""
     name = "qemu-system-x86_64"

@@ -116,17 +116,33 @@ class VM:
 _vms: dict[str, VM] = {}
 
 
-def get_vm(name: str) -> VM:
+def _lookup(name: str) -> VM:
     vm = _vms.get(name)
     if vm is None:
         known = ", ".join(_vms) or "none"
         raise KeyError(f"no VM named {name!r} (running VMs: {known})")
+    return vm
+
+
+def get_vm(name: str) -> VM:
+    vm = _lookup(name)
     if not vm.running:
         raise RuntimeError(
             f"VM {name!r} has exited (code {vm.proc.returncode}). "
             f"Last serial output:\n{tail(vm.serial_text(), 15)}"
         )
     return vm
+
+
+def get_vm_any(name: str) -> VM:
+    """Like get_vm, but returns an exited VM instead of raising.
+
+    For read-only introspection that doesn't need a live QMP connection -
+    qemu_serial reads a log file off disk, so it works just as well after
+    the VM has died, and that's often exactly when it's needed most (to
+    see what the guest printed right before a crash).
+    """
+    return _lookup(name)
 
 
 def list_vms() -> list[VM]:
