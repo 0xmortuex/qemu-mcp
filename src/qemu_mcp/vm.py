@@ -194,6 +194,16 @@ def boot(
         raise ValueError(
             f"invalid memory_mb {memory_mb!r}: must be a positive number of megabytes"
         )
+    if qmp_connect_timeout_s <= 0:
+        raise ValueError(
+            f"invalid qmp_connect_timeout_s {qmp_connect_timeout_s!r}: must be positive"
+        )
+    if qmp_read_timeout_s <= 0:
+        raise ValueError(
+            f"invalid qmp_read_timeout_s {qmp_read_timeout_s!r}: must be positive "
+            "(socket.settimeout rejects non-positive values with a raw ValueError, "
+            "which would otherwise escape uncaught after QEMU is already running)"
+        )
 
     reap_dead()
     stale = _vms.get(name)

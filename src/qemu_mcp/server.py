@@ -63,7 +63,8 @@ def qemu_boot(
     launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how
     long any single QMP command (including ones issued by other qemu_* tools
     for this VM, like qemu_qmp or qemu_snapshot_save) waits for a response -
-    raise it if you expect a command that can legitimately run long.
+    raise it if you expect a command that can legitimately run long. Both
+    timeouts must be positive.
     The VM keeps running until qemu_stop; serial output is captured continuously.
     """
     vm = vmmod.boot(

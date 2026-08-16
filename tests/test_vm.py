@@ -101,6 +101,42 @@ def test_boot_rejects_non_positive_memory_mb(memory_mb):
         assert repr(memory_mb) in str(e)
 
 
+@pytest.mark.parametrize("qmp_connect_timeout_s", [0, -1.0, -5])
+def test_boot_rejects_non_positive_qmp_connect_timeout(qmp_connect_timeout_s):
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+            qmp_connect_timeout_s=qmp_connect_timeout_s,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(qmp_connect_timeout_s) in str(e)
+
+
+@pytest.mark.parametrize("qmp_read_timeout_s", [0, -1.0, -5])
+def test_boot_rejects_non_positive_qmp_read_timeout(qmp_read_timeout_s):
+    # Regression test: socket.settimeout() raises a raw ValueError (not
+    # QMPError) for non-positive values, which used to escape vm.boot()'s
+    # `except QMPError` uncaught *after* QEMU was already launched - leaking
+    # the process, its QMP socket, and the workdir. Confirmed directly:
+    #   >>> socket.socket().settimeout(-1.0)
+    #   ValueError: Timeout value out of range
+    # Validating up front (before find_qemu/Popen) avoids ever reaching that
+    # path, so this test only needs to check the early rejection.
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+            qmp_read_timeout_s=qmp_read_timeout_s,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(qmp_read_timeout_s) in str(e)
+
+
 class _FakeProc:
     """Stands in for subprocess.Popen: already exited, no real process involved."""
 
