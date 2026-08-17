@@ -204,6 +204,12 @@ def boot(
             "(socket.settimeout rejects non-positive values with a raw ValueError, "
             "which would otherwise escape uncaught after QEMU is already running)"
         )
+    extra_argv: list[str] = []
+    if extra_args:
+        try:
+            extra_argv = shlex.split(extra_args, posix=(os.name != "nt"))
+        except ValueError as e:
+            raise ValueError(f"invalid extra_args {extra_args!r}: {e}") from None
 
     reap_dead()
     stale = _vms.get(name)
@@ -243,8 +249,7 @@ def boot(
         args += ["-initrd", initrd]
     if disk:
         args += ["-drive", f"file={disk},format={disk_format(disk)}"]
-    if extra_args:
-        args += shlex.split(extra_args, posix=(os.name != "nt"))
+    args += extra_argv
 
     log = open(qemu_log, "w", encoding="utf-8")
     proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)

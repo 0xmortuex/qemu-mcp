@@ -137,6 +137,41 @@ def test_boot_rejects_non_positive_qmp_read_timeout(qmp_read_timeout_s):
         assert repr(qmp_read_timeout_s) in str(e)
 
 
+@pytest.mark.parametrize("extra_args", ['-device foo "bar', "'unterminated"])
+def test_boot_rejects_malformed_extra_args(extra_args):
+    # Regression test: shlex.split() raises a raw ValueError (not caught
+    # anywhere) for unbalanced quotes, which used to happen *after*
+    # tempfile.mkdtemp() had already created the VM's workdir - since
+    # nothing on that path cleans up on failure, every malformed extra_args
+    # call leaked a workdir. Validating up front (before mkdtemp is ever
+    # called) avoids the leak entirely, so this test only needs to check
+    # the early rejection; test_boot_does_not_create_workdir_for_bad_extra_args
+    # below confirms mkdtemp is never reached.
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=extra_args,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(extra_args) in str(e)
+
+
+def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
+    created = _track_mkdtemp(monkeypatch)
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args='-device foo "bar',
+        )
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    assert created == []
+
+
 class _FakeProc:
     """Stands in for subprocess.Popen: already exited, no real process involved."""
 
