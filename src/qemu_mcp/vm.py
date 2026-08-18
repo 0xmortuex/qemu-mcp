@@ -292,10 +292,15 @@ def stop(name: str, force: bool) -> str:
                 outcome = "ACPI powerdown"
             except QMPError:
                 force = True
-            for _ in range(40):  # up to 10 s for a graceful guest shutdown
-                if not vm.running:
-                    break
-                time.sleep(0.25)
+            else:
+                # Only wait for a graceful shutdown if the powerdown request
+                # actually reached the guest - if the QMP command itself
+                # failed, the guest was never asked to shut down, so waiting
+                # here just burns the full 10 s before falling back to a kill.
+                for _ in range(40):  # up to 10 s for a graceful guest shutdown
+                    if not vm.running:
+                        break
+                    time.sleep(0.25)
         if vm.running:
             try:
                 vm.qmp.command("quit")

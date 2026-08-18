@@ -233,6 +233,59 @@ def test_stop_removes_the_vm_workdir(tmp_path):
     assert not workdir.exists()
 
 
+class _QuitExitsProc(_FakeProc):
+    """Running until quit()/kill() is called, then reports exited."""
+
+    def __init__(self):
+        self._running = True
+
+    def poll(self):
+        return None if self._running else 0
+
+    def wait(self, timeout=None):
+        self._running = False
+        return 0
+
+    def kill(self):
+        self._running = False
+
+
+class _PowerdownFailsQMP(_FakeQMP):
+    """system_powerdown fails outright (e.g. a broken QMP connection); quit succeeds."""
+
+    def __init__(self):
+        self.calls = []
+
+    def command(self, name, **kwargs):
+        self.calls.append(name)
+        if name == "system_powerdown":
+            raise vm.QMPError("qmp unreachable")
+        return {}
+
+
+def test_stop_skips_the_graceful_wait_when_powerdown_itself_fails(tmp_path, monkeypatch):
+    # If system_powerdown never reached the guest, waiting up to 10 s for a
+    # graceful shutdown that was never requested just delays the fallback
+    # kill - regression test for that wasted wait.
+    workdir = tmp_path / "qemu-mcp-stop-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("stop-test", workdir)
+    fake.proc = _QuitExitsProc()
+    fake.qmp = _PowerdownFailsQMP()
+
+    sleep_calls = []
+    monkeypatch.setattr(vm.time, "sleep", lambda s: sleep_calls.append(s))
+
+    try:
+        outcome = vm.stop("stop-test", force=False)
+    finally:
+        vm._vms.pop("stop-test", None)
+
+    assert outcome == "killed"
+    assert fake.qmp.calls == ["system_powerdown", "quit"]
+    assert sleep_calls == [], "should not sleep waiting for a shutdown that was never requested"
+
+
 class _RunningFakeProc(_FakeProc):
     def poll(self):
         return None
