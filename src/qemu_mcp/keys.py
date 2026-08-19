@@ -58,14 +58,51 @@ def char_to_keys(ch: str) -> list[str]:
     raise ValueError(f"cannot type character {ch!r} (no qcode mapping)")
 
 
+def _split_combo(raw: str) -> list[str]:
+    """Split on "-", treating "--" as an escaped literal "-" token.
+
+    "-" is both the part delimiter and a key that can appear in a combo
+    (e.g. "ctrl+-" for zoom-out), so a plain split() can't tell "ctrl-alt"
+    apart from a combo containing a literal dash. "--" resolves that:
+    "ctrl--" is ctrl + literal "-", "ctrl---alt" is ctrl + "-" + alt.
+    """
+    parts = []
+    buf = ""
+    i, n = 0, len(raw)
+    while i < n:
+        if raw[i] == "-":
+            if i + 1 < n and raw[i + 1] == "-":
+                if buf:
+                    parts.append(buf)
+                    buf = ""
+                parts.append("-")
+                i += 2
+                continue
+            if buf:
+                parts.append(buf)
+                buf = ""
+            i += 1
+            continue
+        buf += raw[i]
+        i += 1
+    if buf:
+        parts.append(buf)
+    return parts
+
+
 def parse_combo(combo: str) -> list[str]:
-    """'ctrl-alt-f2' / 'F12' / 'enter' -> qcodes pressed together."""
-    parts = [p for p in combo.strip().lower().split("-") if p]
+    """'ctrl-alt-f2' / 'F12' / 'enter' -> qcodes pressed together.
+
+    A literal "-" key is written "--" (e.g. "ctrl--" for ctrl + minus).
+    """
+    parts = _split_combo(combo.strip().lower())
     if not parts:
         raise ValueError("empty key combo")
     out = []
     for p in parts:
-        if p in _NAMED:
+        if p == "-":
+            out.append(_PLAIN["-"])
+        elif p in _NAMED:
             out.append(_NAMED[p])
         elif len(p) == 1:
             out.extend(char_to_keys(p))

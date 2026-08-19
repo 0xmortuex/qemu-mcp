@@ -127,7 +127,8 @@ def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
 def qemu_key(name: str, combo: str) -> str:
     """Press a key or chord: "enter", "esc", "f12", "ctrl-alt-f2", "ctrl-c"...
 
-    Parts are joined with "-" and pressed together. Use qemu_type for
+    Parts are joined with "-" and pressed together. A literal "-" key is
+    written "--" (e.g. "ctrl--" for ctrl + minus). Use qemu_type for
     plain text.
     """
     vm = vmmod.get_vm(name)

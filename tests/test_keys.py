@@ -114,13 +114,17 @@ def test_char_to_keys_rejects_non_single_char(ch):
         ("pageup", ["pgup"]),
         ("pagedown", ["pgdn"]),
         (" ctrl-c ", ["ctrl", "c"]),  # surrounding whitespace stripped
+        ("--", ["minus"]),  # "--" is an escaped literal "-" key
+        ("ctrl--", ["ctrl", "minus"]),  # ctrl + literal "-" (e.g. zoom out)
+        ("ctrl---alt", ["ctrl", "minus", "alt"]),  # literal "-" mid-combo
+        ("shift---", ["shift", "minus"]),  # trailing lone "-" is ignored
     ],
 )
 def test_parse_combo_good_cases(combo, expected):
     assert parse_combo(combo) == expected
 
 
-@pytest.mark.parametrize("combo", ["", "   ", "-", "--"])
+@pytest.mark.parametrize("combo", ["", "   ", "-"])
 def test_parse_combo_empty_combo_raises(combo):
     with pytest.raises(ValueError):
         parse_combo(combo)
