@@ -154,6 +154,23 @@ def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
     return f"{action} at ({x:.2f}, {y:.2f}) in {name!r}"
 
 
+def _hmp_result(success_message: str, output: Any) -> str:
+    """Turn a human-monitor-command reply into a tool result.
+
+    QMP's human-monitor-command always returns 200 OK with whatever the HMP
+    command would have printed to the monitor as its return string - it does
+    not raise a QMP error for a failure like "Device does not support
+    snapshots" or "not enough space", so a caller that ignores the return
+    value reports success even when QEMU didn't do anything. savevm/loadvm
+    print nothing on success, so any non-empty output is treated as an
+    error/warning and surfaced instead of the success message.
+    """
+    text = str(output).strip() if output else ""
+    if text:
+        return f"{success_message} may have FAILED - QEMU said: {text}"
+    return success_message
+
+
 @mcp.tool()
 def qemu_snapshot_save(name: str, tag: str) -> str:
     """Save a full VM snapshot (RAM + device state) under `tag`.
@@ -164,8 +181,10 @@ def qemu_snapshot_save(name: str, tag: str) -> str:
     it. tag may only contain letters, digits, '.', '_', '-'.
     """
     vm = vmmod.get_vm(name)
-    vm.qmp.command("human-monitor-command", **{"command-line": snapmod.save_command_line(tag)})
-    return f"saved snapshot {tag!r} for VM {name!r}"
+    output = vm.qmp.command(
+        "human-monitor-command", **{"command-line": snapmod.save_command_line(tag)}
+    )
+    return _hmp_result(f"saved snapshot {tag!r} for VM {name!r}", output)
 
 
 @mcp.tool()
@@ -175,8 +194,10 @@ def qemu_snapshot_load(name: str, tag: str) -> str:
     Requires the same qcow2 disk the snapshot was taken on.
     """
     vm = vmmod.get_vm(name)
-    vm.qmp.command("human-monitor-command", **{"command-line": snapmod.load_command_line(tag)})
-    return f"loaded snapshot {tag!r} for VM {name!r}"
+    output = vm.qmp.command(
+        "human-monitor-command", **{"command-line": snapmod.load_command_line(tag)}
+    )
+    return _hmp_result(f"loaded snapshot {tag!r} for VM {name!r}", output)
 
 
 @mcp.tool()

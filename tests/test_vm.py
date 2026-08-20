@@ -403,6 +403,87 @@ def test_get_vm_any_raises_keyerror_for_an_unregistered_name():
         assert "no-such-vm" in str(e)
 
 
+class _HMPQMP(_FakeQMP):
+    """human-monitor-command returns whatever text the fake HMP command prints."""
+
+    def __init__(self, output):
+        self.output = output
+
+    def command(self, name, **kwargs):
+        assert name == "human-monitor-command"
+        return self.output
+
+
+def test_qemu_snapshot_save_reports_success_on_empty_hmp_output(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-save-ok"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-save-ok", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("")
+
+    try:
+        out = server.qemu_snapshot_save(name="snap-save-ok", tag="clean-boot")
+    finally:
+        vm._vms.pop("snap-save-ok", None)
+
+    assert out == "saved snapshot 'clean-boot' for VM 'snap-save-ok'"
+
+
+def test_qemu_snapshot_save_surfaces_hmp_error_instead_of_claiming_success(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-save-fail"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-save-fail", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("Error: Device 'ide0-hd0' does not support snapshots\n")
+
+    try:
+        out = server.qemu_snapshot_save(name="snap-save-fail", tag="clean-boot")
+    finally:
+        vm._vms.pop("snap-save-fail", None)
+
+    assert "may have FAILED" in out
+    assert "does not support snapshots" in out
+
+
+def test_qemu_snapshot_load_surfaces_hmp_error_instead_of_claiming_success(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-load-fail"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-load-fail", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("Error: unable to find snapshot 'missing'\n")
+
+    try:
+        out = server.qemu_snapshot_load(name="snap-load-fail", tag="missing")
+    finally:
+        vm._vms.pop("snap-load-fail", None)
+
+    assert "may have FAILED" in out
+    assert "unable to find snapshot" in out
+
+
+def test_qemu_snapshot_load_reports_success_on_empty_hmp_output(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-load-ok"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-load-ok", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("")
+
+    try:
+        out = server.qemu_snapshot_load(name="snap-load-ok", tag="clean-boot")
+    finally:
+        vm._vms.pop("snap-load-ok", None)
+
+    assert out == "loaded snapshot 'clean-boot' for VM 'snap-load-ok'"
+
+
 def test_qemu_serial_reads_the_tail_after_the_vm_has_exited(tmp_path):
     from qemu_mcp import server
 
