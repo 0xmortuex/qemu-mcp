@@ -648,3 +648,33 @@ def test_boot_reaps_a_stale_exited_vm_registered_under_the_same_name(tmp_path, m
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+def test_qemu_wait_screen_rejects_non_positive_poll_interval():
+    # Regression test: a non-positive poll_interval_s used to reach
+    # time.sleep(poll_interval_s) unvalidated - 0 would busy-loop screendump
+    # calls against the VM forever, and a negative value raised a raw
+    # ValueError from time.sleep after already sending one screendump. No
+    # VM needs to be registered: the check now fires before vmmod.get_vm.
+    from qemu_mcp import server
+
+    for bad in (0, -1, -0.5):
+        try:
+            server.qemu_wait_screen(name="no-such-vm", poll_interval_s=bad)
+            assert False, f"expected ValueError for poll_interval_s={bad!r}"
+        except ValueError as e:
+            assert "poll_interval_s" in str(e)
+
+
+def test_qemu_wait_screen_rejects_non_positive_stable_polls_before_vm_lookup():
+    # stable_polls was already validated by screenmod.StabilityTracker, but
+    # only after vmmod.get_vm(name) had already required a running VM to
+    # exist - moved earlier as part of the poll_interval_s fix above, so a
+    # bad stable_polls now fails the same way regardless of VM state.
+    from qemu_mcp import server
+
+    try:
+        server.qemu_wait_screen(name="no-such-vm", stable_polls=0)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "stable_polls" in str(e)

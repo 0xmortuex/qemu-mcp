@@ -262,9 +262,16 @@ def qemu_wait_screen(
     guest (no serial output) has finished a BIOS splash or boot animation
     before you screenshot or type. For guests with serial output, prefer
     qemu_wait_serial - it doesn't need a fixed number of polls to decide.
+    poll_interval_s must be positive.
     """
-    vm = vmmod.get_vm(name)
+    if poll_interval_s <= 0:
+        raise ValueError(
+            f"invalid poll_interval_s {poll_interval_s!r}: must be positive "
+            "(time.sleep rejects a negative value with a raw ValueError, and 0 "
+            "would busy-loop screendump calls against the VM)"
+        )
     tracker = screenmod.StabilityTracker(stable_polls)
+    vm = vmmod.get_vm(name)
     ppm = os.path.join(vm.workdir, "wait_screen.ppm")
     deadline = time.monotonic() + timeout_s
     polls = 0
