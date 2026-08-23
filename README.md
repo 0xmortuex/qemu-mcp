@@ -135,6 +135,10 @@ There's also an end-to-end test that boots a real ISO and exercises every tool:
 QEMU_MCP_TEST_ISO=path/to/anything-bootable.iso python tests/smoke_test.py
 ```
 
+`qemu_snapshot_save`/`qemu_snapshot_load` need a qcow2 disk rather than an
+ISO, so they're only exercised if you also set `QEMU_MCP_TEST_QCOW2` to a
+qcow2 disk image (booted as a second VM alongside the ISO one).
+
 ## Notes
 
 - VMs run headless (`-display none`); screenshots still work because QEMU keeps rendering the VGA framebuffer.
