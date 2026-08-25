@@ -201,6 +201,20 @@ def qemu_snapshot_load(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def qemu_snapshot_delete(name: str, tag: str) -> str:
+    """Delete a snapshot previously saved with qemu_snapshot_save.
+
+    Frees the space it used inside the qcow2 disk. Reports failure if QEMU's
+    delvm rejects it (e.g. an unknown tag) instead of claiming success.
+    """
+    vm = vmmod.get_vm(name)
+    output = vm.qmp.command(
+        "human-monitor-command", **{"command-line": snapmod.delete_command_line(tag)}
+    )
+    return _hmp_result(f"deleted snapshot {tag!r} for VM {name!r}", output)
+
+
+@mcp.tool()
 def qemu_serial(name: str, tail_lines: int = 50) -> str:
     """Read the tail of the VM's serial console output (COM1).
 

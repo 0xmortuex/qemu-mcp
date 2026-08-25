@@ -43,3 +43,12 @@ def test_save_command_line_rejects_invalid_tag():
 def test_load_command_line_rejects_invalid_tag():
     with pytest.raises(ValueError):
         snapshot.load_command_line("with space")
+
+
+def test_delete_command_line():
+    assert snapshot.delete_command_line("clean-boot") == "delvm clean-boot"
+
+
+def test_delete_command_line_rejects_invalid_tag():
+    with pytest.raises(ValueError):
+        snapshot.delete_command_line("with space")

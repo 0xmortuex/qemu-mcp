@@ -484,6 +484,41 @@ def test_qemu_snapshot_load_reports_success_on_empty_hmp_output(tmp_path):
     assert out == "loaded snapshot 'clean-boot' for VM 'snap-load-ok'"
 
 
+def test_qemu_snapshot_delete_reports_success_on_empty_hmp_output(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-delete-ok"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-delete-ok", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("")
+
+    try:
+        out = server.qemu_snapshot_delete(name="snap-delete-ok", tag="clean-boot")
+    finally:
+        vm._vms.pop("snap-delete-ok", None)
+
+    assert out == "deleted snapshot 'clean-boot' for VM 'snap-delete-ok'"
+
+
+def test_qemu_snapshot_delete_surfaces_hmp_error_instead_of_claiming_success(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-delete-fail"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-delete-fail", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("Error: snapshot 'missing' not found\n")
+
+    try:
+        out = server.qemu_snapshot_delete(name="snap-delete-fail", tag="missing")
+    finally:
+        vm._vms.pop("snap-delete-fail", None)
+
+    assert "may have FAILED" in out
+    assert "not found" in out
+
+
 def test_qemu_serial_reads_the_tail_after_the_vm_has_exited(tmp_path):
     from qemu_mcp import server
 

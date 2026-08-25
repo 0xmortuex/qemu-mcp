@@ -27,3 +27,7 @@ def save_command_line(tag: str) -> str:
 
 def load_command_line(tag: str) -> str:
     return f"loadvm {validate_tag(tag)}"
+
+
+def delete_command_line(tag: str) -> str:
+    return f"delvm {validate_tag(tag)}"
