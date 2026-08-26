@@ -519,6 +519,40 @@ def test_qemu_snapshot_delete_surfaces_hmp_error_instead_of_claiming_success(tmp
     assert "not found" in out
 
 
+def test_qemu_snapshot_list_returns_raw_hmp_output(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-list-ok"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-list-ok", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("Tag  VM size  Date  VM clock\nclean-boot  1G  ...\n")
+
+    try:
+        out = server.qemu_snapshot_list(name="snap-list-ok")
+    finally:
+        vm._vms.pop("snap-list-ok", None)
+
+    assert out == "Tag  VM size  Date  VM clock\nclean-boot  1G  ..."
+
+
+def test_qemu_snapshot_list_reports_placeholder_on_empty_hmp_output(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-list-empty"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-list-empty", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _HMPQMP("")
+
+    try:
+        out = server.qemu_snapshot_list(name="snap-list-empty")
+    finally:
+        vm._vms.pop("snap-list-empty", None)
+
+    assert out == "(no snapshot info returned)"
+
+
 def test_qemu_serial_reads_the_tail_after_the_vm_has_exited(tmp_path):
     from qemu_mcp import server
 

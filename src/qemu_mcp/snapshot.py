@@ -31,3 +31,7 @@ def load_command_line(tag: str) -> str:
 
 def delete_command_line(tag: str) -> str:
     return f"delvm {validate_tag(tag)}"
+
+
+def list_command_line() -> str:
+    return "info snapshots"

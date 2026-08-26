@@ -72,9 +72,13 @@ print(server.qemu_list())
 if DISK:
     print(server.qemu_boot(name="smoke-snap", disk=DISK, arch=ARCH, memory_mb=256))
     print(server.qemu_snapshot_save(name="smoke-snap", tag="smoke-tag"))
+    print(server.qemu_snapshot_list(name="smoke-snap"))
     print(server.qemu_snapshot_load(name="smoke-snap", tag="smoke-tag"))
     print(server.qemu_stop(name="smoke-snap", force=True))
 else:
-    print("skipping qemu_snapshot_save/qemu_snapshot_load: set QEMU_MCP_TEST_QCOW2 to a qcow2 disk to exercise them")
+    print(
+        "skipping qemu_snapshot_save/qemu_snapshot_list/qemu_snapshot_load: "
+        "set QEMU_MCP_TEST_QCOW2 to a qcow2 disk to exercise them"
+    )
 
 print("SMOKE OK")

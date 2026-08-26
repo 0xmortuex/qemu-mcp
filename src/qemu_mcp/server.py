@@ -215,6 +215,23 @@ def qemu_snapshot_delete(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def qemu_snapshot_list(name: str) -> str:
+    """List internal snapshots saved on the VM's qcow2 disk.
+
+    Wraps QEMU's HMP `info snapshots` so you can see what tags already exist
+    before calling qemu_snapshot_load or qemu_snapshot_delete, instead of
+    finding out only from a failure afterward. Returns QEMU's raw table
+    output as-is (its exact column layout isn't parsed here).
+    """
+    vm = vmmod.get_vm(name)
+    output = vm.qmp.command(
+        "human-monitor-command", **{"command-line": snapmod.list_command_line()}
+    )
+    text = str(output).strip() if output else ""
+    return text if text else "(no snapshot info returned)"
+
+
+@mcp.tool()
 def qemu_serial(name: str, tail_lines: int = 50) -> str:
     """Read the tail of the VM's serial console output (COM1).
 

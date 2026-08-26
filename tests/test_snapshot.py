@@ -52,3 +52,7 @@ def test_delete_command_line():
 def test_delete_command_line_rejects_invalid_tag():
     with pytest.raises(ValueError):
         snapshot.delete_command_line("with space")
+
+
+def test_list_command_line():
+    assert snapshot.list_command_line() == "info snapshots"

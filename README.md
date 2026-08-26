@@ -38,6 +38,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_snapshot_save` | Save a full RAM+device snapshot under a tag (needs a qcow2 disk). Reports failure if QEMU's savevm rejects it (e.g. a raw disk) instead of claiming success |
 | `qemu_snapshot_load` | Restore a VM to a previously saved snapshot tag. Reports failure if QEMU's loadvm rejects it (e.g. an unknown tag) instead of claiming success |
 | `qemu_snapshot_delete` | Delete a previously saved snapshot tag, freeing its space in the qcow2 disk. Reports failure if QEMU's delvm rejects it (e.g. an unknown tag) instead of claiming success |
+| `qemu_snapshot_list` | List snapshot tags saved on the VM's qcow2 disk (raw `info snapshots` output), so you can see what's available before loading or deleting one |
 | `qemu_serial` | Tail the serial console (COM1) output — works after the VM has exited too, to see what it printed right before dying |
 | `qemu_serial_send` | Write text to the serial console (COM1) |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout |
