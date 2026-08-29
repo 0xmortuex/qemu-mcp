@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import tempfile
 import time
 from typing import Any
 
@@ -91,17 +92,21 @@ def qemu_screenshot(name: str) -> Image:
     from PIL import Image as PILImage
 
     vm = vmmod.get_vm(name)
-    ppm = os.path.join(vm.workdir, "shot.ppm")
-    vm.qmp.command("screendump", filename=ppm)
-    # QMP returns before the file write is guaranteed visible; poll briefly.
-    for _ in range(20):
-        if os.path.isfile(ppm) and os.path.getsize(ppm) > 0:
-            break
-        time.sleep(0.05)
-    with PILImage.open(ppm) as im:
-        buf = io.BytesIO()
-        im.save(buf, format="PNG")
-    return Image(data=buf.getvalue(), format="png")
+    fd, ppm = tempfile.mkstemp(suffix=".ppm", dir=vm.workdir)
+    os.close(fd)
+    try:
+        vm.qmp.command("screendump", filename=ppm)
+        # QMP returns before the file write is guaranteed visible; poll briefly.
+        for _ in range(20):
+            if os.path.getsize(ppm) > 0:
+                break
+            time.sleep(0.05)
+        with PILImage.open(ppm) as im:
+            buf = io.BytesIO()
+            im.save(buf, format="PNG")
+        return Image(data=buf.getvalue(), format="png")
+    finally:
+        os.remove(ppm)
 
 
 @mcp.tool()
@@ -303,22 +308,26 @@ def qemu_wait_screen(
         )
     tracker = screenmod.StabilityTracker(stable_polls)
     vm = vmmod.get_vm(name)
-    ppm = os.path.join(vm.workdir, "wait_screen.ppm")
-    deadline = time.monotonic() + timeout_s
-    polls = 0
-    while time.monotonic() < deadline:
-        vm.qmp.command("screendump", filename=ppm)
-        for _ in range(20):
-            if os.path.isfile(ppm) and os.path.getsize(ppm) > 0:
-                break
-            time.sleep(0.05)
-        polls += 1
-        if tracker.update(screenmod.hash_file(ppm)):
-            return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
-        if not vm.running:
-            return f"VM EXITED after {polls} polls"
-        time.sleep(poll_interval_s)
-    return f"TIMEOUT after {timeout_s}s ({polls} polls)"
+    fd, ppm = tempfile.mkstemp(suffix=".ppm", dir=vm.workdir)
+    os.close(fd)
+    try:
+        deadline = time.monotonic() + timeout_s
+        polls = 0
+        while time.monotonic() < deadline:
+            vm.qmp.command("screendump", filename=ppm)
+            for _ in range(20):
+                if os.path.getsize(ppm) > 0:
+                    break
+                time.sleep(0.05)
+            polls += 1
+            if tracker.update(screenmod.hash_file(ppm)):
+                return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
+            if not vm.running:
+                return f"VM EXITED after {polls} polls"
+            time.sleep(poll_interval_s)
+        return f"TIMEOUT after {timeout_s}s ({polls} polls)"
+    finally:
+        os.remove(ppm)
 
 
 @mcp.tool()

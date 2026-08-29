@@ -403,6 +403,69 @@ def test_get_vm_any_raises_keyerror_for_an_unregistered_name():
         assert "no-such-vm" in str(e)
 
 
+class _ScreendumpQMP(_FakeQMP):
+    """Writes fixed PPM bytes to whatever filename screendump is given."""
+
+    def __init__(self, ppm_bytes):
+        self.ppm_bytes = ppm_bytes
+        self.filenames = []
+
+    def command(self, name, **kwargs):
+        assert name == "screendump"
+        filename = kwargs["filename"]
+        self.filenames.append(filename)
+        with open(filename, "wb") as f:
+            f.write(self.ppm_bytes)
+        return {}
+
+
+_ONE_PIXEL_PPM = b"P6\n1 1\n255\n" + bytes([255, 0, 0])
+
+
+def test_qemu_screenshot_uses_a_unique_tempfile_and_cleans_up(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-screenshot-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("screenshot-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _ScreendumpQMP(_ONE_PIXEL_PPM)
+
+    try:
+        image = server.qemu_screenshot(name="screenshot-test")
+        assert image.data[:8] == b"\x89PNG\r\n\x1a\n"
+        # Same fixed name every call would race under concurrent callers -
+        # each call must get its own file, and none should be left behind.
+        server.qemu_screenshot(name="screenshot-test")
+        assert len(set(fake.qmp.filenames)) == 2
+        assert list(workdir.glob("*.ppm")) == []
+    finally:
+        vm._vms.pop("screenshot-test", None)
+
+
+def test_qemu_wait_screen_uses_a_unique_tempfile_and_cleans_up(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-screen-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("wait-screen-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _ScreendumpQMP(_ONE_PIXEL_PPM)
+
+    try:
+        result = server.qemu_wait_screen(
+            name="wait-screen-test", timeout_s=5, poll_interval_s=0.01, stable_polls=2
+        )
+        assert result.startswith("SETTLED")
+        assert len(fake.qmp.filenames) == 2
+        assert fake.qmp.filenames[0] == fake.qmp.filenames[1], (
+            "polls within one call may reuse a file, just not across calls/tools"
+        )
+        assert list(workdir.glob("*.ppm")) == []
+    finally:
+        vm._vms.pop("wait-screen-test", None)
+
+
 class _HMPQMP(_FakeQMP):
     """human-monitor-command returns whatever text the fake HMP command prints."""
 
