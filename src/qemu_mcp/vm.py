@@ -69,6 +69,8 @@ def _free_port() -> int:
         return port
 
 
+_MAX_PORT_CONFLICT_RETRIES = 3
+
 _QCOW2_MAGIC = b"QFI\xfb"
 
 
@@ -223,61 +225,76 @@ def boot(
             raise FileNotFoundError(f"{label} not found: {p}")
 
     qemu = find_qemu(arch)
-    port = _free_port()
-    serial_port = _free_port()
-    workdir = tempfile.mkdtemp(prefix=f"qemu-mcp-{name}-")
-    serial_path = os.path.join(workdir, "serial.log")
-    qemu_log = os.path.join(workdir, "qemu.log")
 
-    args = [
-        qemu,
-        "-name", name,
-        "-m", str(memory_mb),
-        "-display", "none",
-        "-qmp", f"tcp:127.0.0.1:{port},server,nowait",
-        *chardev_args(serial_path, serial_port),
-    ]
-    if machine:
-        args += ["-M", machine]
-    if iso:
-        args += ["-cdrom", iso, "-boot", "d"]
-    if kernel:
-        args += ["-kernel", kernel]
-    if append:
-        args += ["-append", append]
-    if initrd:
-        args += ["-initrd", initrd]
-    if disk:
-        args += ["-drive", f"file={disk},format={disk_format(disk)}"]
-    args += extra_argv
+    last_error: RuntimeError | None = None
+    for _attempt in range(_MAX_PORT_CONFLICT_RETRIES):
+        port = _free_port()
+        serial_port = _free_port()
+        workdir = tempfile.mkdtemp(prefix=f"qemu-mcp-{name}-")
+        serial_path = os.path.join(workdir, "serial.log")
+        qemu_log = os.path.join(workdir, "qemu.log")
 
-    log = open(qemu_log, "w", encoding="utf-8")
-    proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        args = [
+            qemu,
+            "-name", name,
+            "-m", str(memory_mb),
+            "-display", "none",
+            "-qmp", f"tcp:127.0.0.1:{port},server,nowait",
+            *chardev_args(serial_path, serial_port),
+        ]
+        if machine:
+            args += ["-M", machine]
+        if iso:
+            args += ["-cdrom", iso, "-boot", "d"]
+        if kernel:
+            args += ["-kernel", kernel]
+        if append:
+            args += ["-append", append]
+        if initrd:
+            args += ["-initrd", initrd]
+        if disk:
+            args += ["-drive", f"file={disk},format={disk_format(disk)}"]
+        args += extra_argv
 
-    try:
-        qmp = QMPClient(port, connect_timeout=qmp_connect_timeout_s, read_timeout=qmp_read_timeout_s)
-    except QMPError:
-        if proc.poll() is not None:
+        log = open(qemu_log, "w", encoding="utf-8")
+        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+
+        try:
+            qmp = QMPClient(port, connect_timeout=qmp_connect_timeout_s, read_timeout=qmp_read_timeout_s)
+        except QMPError:
+            if proc.poll() is not None:
+                log.close()
+                with open(qemu_log, encoding="utf-8", errors="replace") as f:
+                    detail = f.read().strip()
+                shutil.rmtree(workdir, ignore_errors=True)
+                last_error = RuntimeError(
+                    f"QEMU exited immediately (code {proc.returncode}):\n{detail}"
+                )
+                if "address already in use" in detail.lower():
+                    # _free_port() binds an ephemeral socket only to immediately
+                    # close it and hand the now-freed port number to QEMU - between
+                    # that close() and QEMU's own bind(), something else (another
+                    # concurrent qemu_boot, or an unrelated process) can grab the
+                    # same port first. Retry with a fresh pair of ports instead of
+                    # surfacing what looks like a random, non-reproducible failure.
+                    continue
+                raise last_error from None
+            proc.kill()
+            proc.wait()
             log.close()
-            with open(qemu_log, encoding="utf-8", errors="replace") as f:
-                detail = f.read().strip()
             shutil.rmtree(workdir, ignore_errors=True)
-            raise RuntimeError(
-                f"QEMU exited immediately (code {proc.returncode}):\n{detail}"
-            ) from None
-        proc.kill()
-        proc.wait()
-        log.close()
-        shutil.rmtree(workdir, ignore_errors=True)
-        raise
+            raise
+        else:
+            vm = VM(
+                name=name, proc=proc, qmp=qmp, workdir=workdir,
+                serial_path=serial_path, serial_console=SerialConsole(serial_port),
+                qemu_log=qemu_log, cmdline=args, arch=arch, machine=machine,
+            )
+            _vms[name] = vm
+            return vm
 
-    vm = VM(
-        name=name, proc=proc, qmp=qmp, workdir=workdir,
-        serial_path=serial_path, serial_console=SerialConsole(serial_port),
-        qemu_log=qemu_log, cmdline=args, arch=arch, machine=machine,
-    )
-    _vms[name] = vm
-    return vm
+    assert last_error is not None
+    raise last_error
 
 
 def stop(name: str, force: bool) -> str:

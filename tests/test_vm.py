@@ -714,6 +714,84 @@ def test_boot_cleans_up_workdir_when_qmp_never_connects(tmp_path, monkeypatch):
     assert created and not os.path.exists(created[-1])
 
 
+class _PortConflictQMPClient:
+    """Stands in for QMPClient: raises QMPError (after a short delay so the
+    "QEMU exited immediately" branch's proc.poll() check is reliable) for the
+    first `fail_times` construction calls, then succeeds - simulating a fake
+    QEMU that loses the race for one of its ports the first few times."""
+
+    attempts = 0
+    fail_times = 0
+
+    def __init__(self, port, connect_timeout=20.0, read_timeout=15.0):
+        time.sleep(0.3)
+        type(self).attempts += 1
+        if type(self).attempts <= type(self).fail_times:
+            raise vm.QMPError("simulated: connect refused")
+
+    def command(self, name, **kwargs):
+        return {}
+
+    def close(self):
+        pass
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_retries_on_address_already_in_use_then_succeeds(tmp_path, monkeypatch):
+    _make_fake_qemu_script(
+        tmp_path,
+        'echo "qemu-system-x86_64: -qmp tcp:127.0.0.1:0: '
+        'Failed to bind socket: Address already in use" >&2\nexit 1',
+    )
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _PortConflictQMPClient.attempts = 0
+    _PortConflictQMPClient.fail_times = vm._MAX_PORT_CONFLICT_RETRIES - 1
+    monkeypatch.setattr(vm, "QMPClient", _PortConflictQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-port-conflict-retry", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert booted.name == "boot-port-conflict-retry"
+        assert _PortConflictQMPClient.attempts == vm._MAX_PORT_CONFLICT_RETRIES
+    finally:
+        vm._vms.pop("boot-port-conflict-retry", None)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_gives_up_after_max_port_conflict_retries(tmp_path, monkeypatch):
+    _make_fake_qemu_script(
+        tmp_path,
+        'echo "qemu-system-x86_64: -qmp tcp:127.0.0.1:0: '
+        'Failed to bind socket: Address already in use" >&2\nexit 1',
+    )
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _PortConflictQMPClient.attempts = 0
+    _PortConflictQMPClient.fail_times = vm._MAX_PORT_CONFLICT_RETRIES + 5
+    monkeypatch.setattr(vm, "QMPClient", _PortConflictQMPClient)
+    created = _track_mkdtemp(monkeypatch)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        vm.boot(
+            name="boot-port-conflict-exhausted", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "Address already in use" in str(e)
+
+    assert _PortConflictQMPClient.attempts == vm._MAX_PORT_CONFLICT_RETRIES
+    assert "boot-port-conflict-exhausted" not in vm._vms
+    assert created and all(not os.path.exists(d) for d in created)
+
+
 class _RecordingQMPClient:
     """Stands in for QMPClient: records the timeout kwargs it was constructed
     with instead of actually connecting, so a test can assert vm.boot()
