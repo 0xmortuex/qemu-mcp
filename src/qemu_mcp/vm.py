@@ -256,14 +256,17 @@ def boot(
             args += ["-drive", f"file={disk},format={disk_format(disk)}"]
         args += extra_argv
 
-        log = open(qemu_log, "w", encoding="utf-8")
-        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        with open(qemu_log, "w", encoding="utf-8") as log:
+            proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        # subprocess.Popen dup2's the fd into the child before returning, so the
+        # child keeps writing to qemu_log after this parent-side handle closes -
+        # closing here (instead of leaving it open for the VM's whole lifetime,
+        # unclosed even by vm.stop()) avoids leaking one fd per successful boot.
 
         try:
             qmp = QMPClient(port, connect_timeout=qmp_connect_timeout_s, read_timeout=qmp_read_timeout_s)
         except QMPError:
             if proc.poll() is not None:
-                log.close()
                 with open(qemu_log, encoding="utf-8", errors="replace") as f:
                     detail = f.read().strip()
                 shutil.rmtree(workdir, ignore_errors=True)
@@ -281,7 +284,6 @@ def boot(
                 raise last_error from None
             proc.kill()
             proc.wait()
-            log.close()
             shutil.rmtree(workdir, ignore_errors=True)
             raise
         else:

@@ -834,6 +834,40 @@ def test_boot_passes_qmp_timeouts_through_to_qmpclient(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_closes_its_own_handle_on_the_qemu_log_write_file(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    real_open = open
+    opened = []
+
+    def _tracking_open(path, *args, **kwargs):
+        f = real_open(path, *args, **kwargs)
+        if str(path).endswith("qemu.log"):
+            opened.append(f)
+        return f
+
+    monkeypatch.setattr("builtins.open", _tracking_open)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        vm.boot(
+            name="boot-log-handle", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        write_handles = [f for f in opened if "w" in f.mode]
+        assert write_handles and all(f.closed for f in write_handles)
+    finally:
+        booted = vm._vms.pop("boot-log-handle", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
 def test_boot_reaps_a_stale_exited_vm_registered_under_the_same_name(tmp_path, monkeypatch):
     _make_fake_qemu_script(tmp_path, "exit 0")
     monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
