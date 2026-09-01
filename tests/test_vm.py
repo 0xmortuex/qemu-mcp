@@ -833,6 +833,63 @@ def test_boot_passes_qmp_timeouts_through_to_qmpclient(tmp_path, monkeypatch):
             shutil.rmtree(booted.workdir, ignore_errors=True)
 
 
+class _SlowConnectQMPClient:
+    """Stands in for QMPClient: takes a while to "connect" and records the
+    monotonic time at which it finished, so a test can compare that against
+    VM.started_at without needing a real QMP server socket."""
+
+    connected_at = None
+
+    def __init__(self, port, connect_timeout=20.0, read_timeout=15.0):
+        time.sleep(0.2)
+        _SlowConnectQMPClient.connected_at = time.monotonic()
+
+    def command(self, name, **kwargs):
+        return {}
+
+    def close(self):
+        pass
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_captures_started_at_after_qmp_connects_not_at_popen_time(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _SlowConnectQMPClient.connected_at = None
+    monkeypatch.setattr(vm, "QMPClient", _SlowConnectQMPClient)
+
+    real_popen = vm.subprocess.Popen
+    popen_started_at = []
+
+    def _timing_popen(*args, **kwargs):
+        popen_started_at.append(time.monotonic())
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(vm.subprocess, "Popen", _timing_popen)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-started-at-timing", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert len(popen_started_at) == 1
+        assert _SlowConnectQMPClient.connected_at is not None
+        # started_at should track when QMP actually connected (this test's
+        # fake QMPClient.__init__ sleeps 0.2s to simulate that), not the
+        # moment Popen() was called - which would understate how long QEMU
+        # took to become reachable over QMP.
+        assert booted.started_at == pytest.approx(_SlowConnectQMPClient.connected_at, abs=0.1)
+        assert booted.started_at - popen_started_at[0] >= 0.15
+    finally:
+        booted = vm._vms.pop("boot-started-at-timing", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
 def test_boot_closes_its_own_handle_on_the_qemu_log_write_file(tmp_path, monkeypatch):
     _make_fake_qemu_script(tmp_path, "exit 0")
