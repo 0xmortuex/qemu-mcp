@@ -27,6 +27,10 @@ def chardev_args(serial_path: str, port: int) -> list[str]:
     return ["-chardev", chardev, "-serial", "chardev:serial0"]
 
 
+class SerialError(Exception):
+    """Raised when the serial console socket can't be connected to or written to."""
+
+
 class SerialConsole:
     """Bidirectional handle to a VM's serial chardev socket at 127.0.0.1:port.
 
@@ -40,16 +44,35 @@ class SerialConsole:
         self.port = port
         self._sock: socket.socket | None = None
 
+    def _connect(self) -> socket.socket:
+        try:
+            return socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        except OSError as e:
+            raise SerialError(
+                f"could not connect to the serial console socket at "
+                f"127.0.0.1:{self.port}: {e}"
+            ) from e
+
     def send(self, data: str) -> None:
         payload = data.encode("utf-8")
         if self._sock is None:
-            self._sock = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+            self._sock = self._connect()
         try:
             self._sock.sendall(payload)
         except OSError:
             self._sock.close()
-            self._sock = socket.create_connection(("127.0.0.1", self.port), timeout=5)
-            self._sock.sendall(payload)
+            self._sock = None
+            try:
+                sock = self._connect()
+                sock.sendall(payload)
+            except (SerialError, OSError) as e:
+                raise SerialError(
+                    f"lost the connection to the serial console at "
+                    f"127.0.0.1:{self.port} and could not reconnect: {e}. "
+                    "The guest may be mid-reboot or its serial socket may "
+                    "have dropped - retry qemu_serial_send once it's back up."
+                ) from e
+            self._sock = sock
 
     def close(self) -> None:
         if self._sock is not None:

@@ -9,7 +9,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from qemu_mcp.serial import SerialConsole, chardev_args  # noqa: E402
+import pytest  # noqa: E402
+
+from qemu_mcp.serial import SerialConsole, SerialError, chardev_args  # noqa: E402
 
 
 def test_chardev_args_wires_host_port_and_logfile():
@@ -100,3 +102,59 @@ def test_close_is_safe_to_call_twice_and_before_any_send():
     console = SerialConsole(0)
     console.close()
     console.close()
+
+
+def test_send_raises_serial_error_when_the_initial_connect_fails():
+    # Port 0 with no listener: connect() fails immediately.
+    server, port = _listen()
+    server.close()  # free the port again so nothing is listening on it
+
+    console = SerialConsole(port)
+    with pytest.raises(SerialError, match=str(port)):
+        console.send("hello")
+    assert console._sock is None
+
+
+def test_send_raises_serial_error_when_reconnect_after_a_drop_also_fails(monkeypatch):
+    calls = []
+
+    def fake_create_connection(addr, timeout=None):
+        calls.append(addr)
+        if len(calls) == 1:
+            return _FakeSocket(fail=True)
+        raise OSError("Connection refused")
+
+    monkeypatch.setattr(
+        "qemu_mcp.serial.socket.create_connection", fake_create_connection
+    )
+
+    console = SerialConsole(9999)
+    with pytest.raises(SerialError, match="lost the connection"):
+        console.send("first")
+
+    assert len(calls) == 2
+    assert console._sock is None
+
+
+def test_send_recovers_on_a_later_call_after_a_failed_reconnect(monkeypatch):
+    sockets = [_FakeSocket(fail=True), None, _FakeSocket(fail=False)]
+    calls = []
+
+    def fake_create_connection(addr, timeout=None):
+        calls.append(addr)
+        sock = sockets[len(calls) - 1]
+        if sock is None:
+            raise OSError("Connection refused")
+        return sock
+
+    monkeypatch.setattr(
+        "qemu_mcp.serial.socket.create_connection", fake_create_connection
+    )
+
+    console = SerialConsole(9999)
+    with pytest.raises(SerialError):
+        console.send("first")  # sockets[0] fails, reconnect (sockets[1]) also fails
+
+    console.send("second")  # fresh connect succeeds this time (sockets[2])
+    assert console._sock is sockets[2]
+    assert sockets[2].sent == b"second"

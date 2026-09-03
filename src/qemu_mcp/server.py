@@ -261,6 +261,9 @@ def qemu_serial_send(name: str, text: str) -> str:
     to qemu_serial's read-only tail. Sent exactly as given; include "\\n"
     yourself for Enter. Kept on one persistent connection for the VM's
     lifetime - disconnecting and reconnecting would hang up the serial line.
+    If the connection drops (e.g. the guest is mid-reboot) this reconnects
+    once automatically; if that also fails, raises with a message saying so
+    - retry the call once the guest's serial socket is back up.
     """
     vm = vmmod.get_vm(name)
     vm.serial_console.send(text)
