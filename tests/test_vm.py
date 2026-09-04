@@ -979,3 +979,19 @@ def test_qemu_wait_screen_rejects_non_positive_stable_polls_before_vm_lookup():
         assert False, "expected ValueError"
     except ValueError as e:
         assert "stable_polls" in str(e)
+
+
+def test_qemu_type_rejects_negative_delay_ms():
+    # Regression test: a negative delay_ms used to reach time.sleep(delay_ms
+    # / 1000) unvalidated, inside the per-character loop - so it raised a
+    # raw ValueError from time.sleep only *after* one or more keystrokes had
+    # already been sent to the guest, instead of failing cleanly up front.
+    # No VM needs to be registered: the check now fires before vmmod.get_vm.
+    from qemu_mcp import server
+
+    for bad in (-1, -50):
+        try:
+            server.qemu_type(name="no-such-vm", text="hi", delay_ms=bad)
+            assert False, f"expected ValueError for delay_ms={bad!r}"
+        except ValueError as e:
+            assert "delay_ms" in str(e)

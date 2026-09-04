@@ -115,8 +115,10 @@ def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
 
     Handles US-layout characters including shifted symbols. delay_ms is the
     gap between keystrokes - raise it (e.g. 80) if the guest drops
-    characters during early boot.
+    characters during early boot. Must be non-negative.
     """
+    if delay_ms < 0:
+        raise ValueError(f"invalid delay_ms {delay_ms!r}: must be non-negative")
     vm = vmmod.get_vm(name)
     for ch in text:
         qcodes = keymod.char_to_keys(ch)
