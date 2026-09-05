@@ -981,6 +981,21 @@ def test_qemu_wait_screen_rejects_non_positive_stable_polls_before_vm_lookup():
         assert "stable_polls" in str(e)
 
 
+def test_qemu_wait_serial_rejects_non_positive_poll_interval():
+    # Same pattern as qemu_wait_screen's poll_interval_s check above: a
+    # non-positive value used to reach the hardcoded time.sleep(0.25) call
+    # (now time.sleep(poll_interval_s)) unvalidated. No VM needs to be
+    # registered: the check fires before vmmod.get_vm.
+    from qemu_mcp import server
+
+    for bad in (0, -1, -0.5):
+        try:
+            server.qemu_wait_serial(name="no-such-vm", text="x", poll_interval_s=bad)
+            assert False, f"expected ValueError for poll_interval_s={bad!r}"
+        except ValueError as e:
+            assert "poll_interval_s" in str(e)
+
+
 def test_qemu_type_rejects_negative_delay_ms():
     # Regression test: a negative delay_ms used to reach time.sleep(delay_ms
     # / 1000) unvalidated, inside the per-character loop - so it raised a

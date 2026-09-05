@@ -273,13 +273,22 @@ def qemu_serial_send(name: str, text: str) -> str:
 
 
 @mcp.tool()
-def qemu_wait_serial(name: str, text: str, timeout_s: int = 30) -> str:
+def qemu_wait_serial(
+    name: str, text: str, timeout_s: int = 30, poll_interval_s: float = 0.25
+) -> str:
     """Block until `text` appears on the serial console, or time out.
 
     The reliable way to know a guest reached a boot stage ("login:",
     "kernel ready", a shell prompt) before typing or screenshotting.
     Returns the serial tail either way, prefixed FOUND or TIMEOUT.
+    poll_interval_s (default 0.25s) must be positive.
     """
+    if poll_interval_s <= 0:
+        raise ValueError(
+            f"invalid poll_interval_s {poll_interval_s!r}: must be positive "
+            "(time.sleep rejects a negative value with a raw ValueError, and 0 "
+            "would busy-loop serial reads against the VM)"
+        )
     vm = vmmod.get_vm(name)
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -288,7 +297,7 @@ def qemu_wait_serial(name: str, text: str, timeout_s: int = 30) -> str:
             return "FOUND\n" + vmmod.tail(out, 20)
         if not vm.running:
             return "VM EXITED\n" + vmmod.tail(out, 20)
-        time.sleep(0.25)
+        time.sleep(poll_interval_s)
     return "TIMEOUT\n" + vmmod.tail(vm.serial_text(), 20)
 
 
