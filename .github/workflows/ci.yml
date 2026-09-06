@@ -11,12 +11,31 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # pyproject.toml declares requires-python = ">=3.10", but CI only ever
+        # exercised 3.12 - full cross product would be 12 jobs for one
+        # package with no OS-specific Python code, so the extra versions
+        # (3.10/3.11/3.13) run on ubuntu-latest only, catching a version
+        # incompatibility without tripling every OS's runner minutes.
+        exclude:
+          - os: windows-latest
+            python-version: "3.10"
+          - os: windows-latest
+            python-version: "3.11"
+          - os: windows-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.10"
+          - os: macos-latest
+            python-version: "3.11"
+          - os: macos-latest
+            python-version: "3.13"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - run: pip install "ruff==0.16.0" "mypy==2.3.0" ".[test]"
       - run: ruff check src tests
       - run: mypy --strict src
