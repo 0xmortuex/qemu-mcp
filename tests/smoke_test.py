@@ -32,6 +32,8 @@ ARCH = os.environ.get("QEMU_MCP_TEST_ARCH", "x86_64")
 OUT = os.environ.get("QEMU_MCP_TEST_SHOT", os.path.join(os.path.dirname(__file__), "smoke.png"))
 DISK = os.environ.get("QEMU_MCP_TEST_QCOW2")  # optional: a qcow2 disk, to also exercise snapshots
 
+print(server.qemu_version(arch=ARCH))
+
 print(server.qemu_boot(name="smoke", iso=ISO, arch=ARCH, memory_mb=256))
 print(server.qemu_list())
 

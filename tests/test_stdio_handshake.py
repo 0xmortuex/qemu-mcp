@@ -14,6 +14,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client  # noqa: E402
 
 EXPECTED_TOOLS = {
     "qemu_boot",
+    "qemu_version",
     "qemu_screenshot",
     "qemu_type",
     "qemu_key",

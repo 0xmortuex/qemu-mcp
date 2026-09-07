@@ -62,6 +62,20 @@ def find_qemu(arch: str) -> str:
     )
 
 
+def version(arch: str) -> str:
+    """Run `qemu-system-<arch> --version` and return its output, without booting a VM.
+
+    Lets a caller check what's actually installed (version, and therefore
+    which QMP commands/machine types it supports) before committing to a
+    qemu_boot call.
+    """
+    qemu = find_qemu(arch)
+    result = subprocess.run(
+        [qemu, "--version"], capture_output=True, text=True, timeout=10, check=False
+    )
+    return (result.stdout or result.stderr).strip()
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

@@ -345,6 +345,17 @@ def qemu_wait_screen(
 
 
 @mcp.tool()
+def qemu_version(arch: str = "x86_64") -> str:
+    """Report `qemu-system-<arch> --version`'s own output, without booting a VM.
+
+    Useful when a QMP command or machine type behaves unexpectedly and you
+    need to know what's actually installed - arch picks the same
+    qemu-system-<arch> binary qemu_boot would use.
+    """
+    return vmmod.version(arch)
+
+
+@mcp.tool()
 def qemu_list() -> str:
     """List all VMs managed by this server, with arch, machine, pid, uptime, and state.
 

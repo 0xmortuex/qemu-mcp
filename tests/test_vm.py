@@ -59,6 +59,19 @@ def test_find_qemu_finds_exact_match_on_path(tmp_path, monkeypatch):
     assert os.path.normcase(vm.find_qemu("x86_64")) == os.path.normcase(path)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_version_returns_qemu_version_output(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, 'echo "QEMU emulator version 8.2.1 (Debian)"')
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert vm.version("x86_64") == "QEMU emulator version 8.2.1 (Debian)"
+
+
+def test_version_raises_when_binary_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(FileNotFoundError):
+        vm.version("x86_64")
+
+
 def test_disk_format_detects_qcow2_magic(tmp_path):
     path = tmp_path / "disk.img"
     path.write_bytes(b"QFI\xfbsomeqcow2headerbytes...")
