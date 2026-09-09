@@ -59,7 +59,10 @@ def qemu_boot(
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
     have no default machine and need e.g. machine="virt". extra_args is passed
     to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0"
-    (must be valid shell-style quoting, e.g. no unbalanced quotes).
+    (must be valid shell-style quoting, e.g. no unbalanced quotes). extra_args
+    may not contain a flag qemu_boot already sets itself: -name, -m, -display,
+    -qmp, -chardev, -serial always; -M/-machine, -cdrom/-boot, -kernel,
+    -append, -initrd, -drive when the corresponding param above is also given.
     qmp_connect_timeout_s bounds how long to retry connecting to QEMU's QMP
     socket after launch (raise it on a slow/loaded host where QEMU's first
     launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how

@@ -185,6 +185,84 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
     assert created == []
 
 
+@pytest.mark.parametrize(
+    "extra_args,kwargs",
+    [
+        # Always-controlled flags: conflict regardless of other params.
+        ("-name evil", {}),
+        ("-m 512", {}),
+        ("-display gtk", {}),
+        ("-qmp tcp:127.0.0.1:1234,server,nowait", {}),
+        ("-chardev socket,id=x", {}),
+        ("-serial chardev:x", {}),
+        # Conditional flags: only conflict when the corresponding param is given.
+        ("-M q35", {"machine": "virt"}),
+        ("-machine q35", {"machine": "virt"}),
+        ("-cdrom other.iso", {}),  # iso="whatever" is always given by this test
+        ("-boot c", {}),
+        ("-kernel other-kernel", {"kernel": "some-kernel"}),
+        ("-append console=ttyS1", {"kernel": "some-kernel", "append": "console=ttyS0"}),
+        ("-initrd other.img", {"kernel": "some-kernel", "initrd": "some.img"}),
+        ("-drive file=other.img", {"disk": "some.img"}),
+    ],
+)
+def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, kwargs):
+    flag = extra_args.split()[0]
+    boot_kwargs = dict(
+        name="valid-name", arch="x86_64", memory_mb=64,
+        iso="whatever", kernel=None, append=None, initrd=None,
+        disk=None, extra_args=extra_args,
+    )
+    boot_kwargs.update(kwargs)
+    try:
+        vm.boot(**boot_kwargs)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert flag in str(e)
+
+
+@pytest.mark.parametrize(
+    "extra_args,kwargs",
+    [
+        # -M/-machine only conflict when machine= is actually given.
+        ("-M virt", {"machine": None}),
+        # -cdrom/-boot only conflict when iso= is actually given.
+        ("-cdrom other.iso", {"iso": None, "disk": "some.img"}),
+        # -kernel/-append/-initrd only conflict when their own param is given.
+        ("-kernel other-kernel", {"kernel": None}),
+        ("-drive file=other.img", {"disk": None}),
+    ],
+)
+def test_boot_allows_extra_args_flag_when_its_own_param_is_not_given(extra_args, kwargs):
+    # Confirms the check is conditional, not a blanket ban on these flags -
+    # only reject a collision when qemu-mcp itself would also set the flag.
+    # It still fails past that point (missing qemu binary, nonexistent
+    # disk/iso file) - the point is that failure isn't the conflict error.
+    boot_kwargs = dict(
+        name="valid-name", arch="x86_64", memory_mb=64,
+        iso="whatever", kernel=None, append=None, initrd=None,
+        disk=None, extra_args=extra_args,
+    )
+    boot_kwargs.update(kwargs)
+    with pytest.raises((ValueError, FileNotFoundError)) as excinfo:
+        vm.boot(**boot_kwargs)
+    assert "extra_args contains" not in str(excinfo.value)
+
+
+def test_boot_does_not_create_workdir_for_conflicting_extra_args(monkeypatch):
+    created = _track_mkdtemp(monkeypatch)
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args="-m 512",
+        )
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    assert created == []
+
+
 class _FakeProc:
     """Stands in for subprocess.Popen: already exited, no real process involved."""
 

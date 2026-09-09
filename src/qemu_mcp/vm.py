@@ -87,6 +87,50 @@ _MAX_PORT_CONFLICT_RETRIES = 3
 
 _QCOW2_MAGIC = b"QFI\xfb"
 
+# Flags vm.boot() always sets on the QEMU command line, plus the ones it
+# only sets when the corresponding qemu_boot param is given. -M/-machine
+# are QEMU synonyms for the same flag, so both are guarded together.
+_ALWAYS_SET_FLAGS = frozenset({"-name", "-m", "-display", "-qmp", "-chardev", "-serial"})
+_CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
+    "machine": frozenset({"-M", "-machine"}),
+    "iso": frozenset({"-cdrom", "-boot"}),
+    "kernel": frozenset({"-kernel"}),
+    "append": frozenset({"-append"}),
+    "initrd": frozenset({"-initrd"}),
+    "disk": frozenset({"-drive"}),
+}
+
+
+def _check_extra_args_conflicts(
+    extra_argv: list[str],
+    *,
+    machine: str | None,
+    iso: str | None,
+    kernel: str | None,
+    append: str | None,
+    initrd: str | None,
+    disk: str | None,
+) -> None:
+    """Reject an extra_args token that duplicates a flag vm.boot() already sets.
+
+    QEMU's behavior on a duplicate flag varies (silently takes the last
+    value, hard-errors, or combines in a surprising way), so this raises a
+    clear ValueError before ever launching QEMU instead of letting a
+    collision surface as a confusing boot failure.
+    """
+    controlled = set(_ALWAYS_SET_FLAGS)
+    given = {"machine": machine, "iso": iso, "kernel": kernel, "append": append, "initrd": initrd, "disk": disk}
+    for param, flags in _CONDITIONAL_FLAGS.items():
+        if given[param]:
+            controlled |= flags
+    conflicts = sorted(controlled & set(extra_argv))
+    if conflicts:
+        raise ValueError(
+            f"extra_args contains {conflicts!r}, which qemu-mcp already sets on the "
+            "command line based on other qemu_boot parameters - remove it from "
+            "extra_args, or unset the corresponding parameter"
+        )
+
 
 def disk_format(path: str) -> str:
     """"qcow2" if `path` starts with the qcow2 magic, else "raw".
@@ -226,6 +270,9 @@ def boot(
             extra_argv = shlex.split(extra_args, posix=(os.name != "nt"))
         except ValueError as e:
             raise ValueError(f"invalid extra_args {extra_args!r}: {e}") from None
+    _check_extra_args_conflicts(
+        extra_argv, machine=machine, iso=iso, kernel=kernel, append=append, initrd=initrd, disk=disk
+    )
 
     reap_dead()
     stale = _vms.get(name)
