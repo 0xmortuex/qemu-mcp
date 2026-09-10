@@ -5,9 +5,9 @@ Needs a bootable image. Point QEMU_MCP_TEST_ISO at any bootable ISO
 
     QEMU_MCP_TEST_ISO=path/to/os.iso python tests/smoke_test.py
 
-qemu_snapshot_save/qemu_snapshot_load need a qcow2 disk instead of an ISO,
-so they're only exercised if QEMU_MCP_TEST_QCOW2 is also set, against a
-second VM booted from that disk:
+qemu_snapshot_save/qemu_snapshot_list/qemu_snapshot_load/qemu_snapshot_delete
+need a qcow2 disk instead of an ISO, so they're only exercised if
+QEMU_MCP_TEST_QCOW2 is also set, against a second VM booted from that disk:
 
     QEMU_MCP_TEST_ISO=path/to/os.iso QEMU_MCP_TEST_QCOW2=path/to/disk.qcow2 \\
         python tests/smoke_test.py
@@ -76,11 +76,12 @@ if DISK:
     print(server.qemu_snapshot_save(name="smoke-snap", tag="smoke-tag"))
     print(server.qemu_snapshot_list(name="smoke-snap"))
     print(server.qemu_snapshot_load(name="smoke-snap", tag="smoke-tag"))
+    print(server.qemu_snapshot_delete(name="smoke-snap", tag="smoke-tag"))
     print(server.qemu_stop(name="smoke-snap", force=True))
 else:
     print(
-        "skipping qemu_snapshot_save/qemu_snapshot_list/qemu_snapshot_load: "
-        "set QEMU_MCP_TEST_QCOW2 to a qcow2 disk to exercise them"
+        "skipping qemu_snapshot_save/qemu_snapshot_list/qemu_snapshot_load/"
+        "qemu_snapshot_delete: set QEMU_MCP_TEST_QCOW2 to a qcow2 disk to exercise them"
     )
 
 print("SMOKE OK")
