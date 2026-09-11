@@ -59,6 +59,41 @@ def test_find_qemu_finds_exact_match_on_path(tmp_path, monkeypatch):
     assert os.path.normcase(vm.find_qemu("x86_64")) == os.path.normcase(path)
 
 
+def test_find_qemu_falls_back_to_flat_windows_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm.sys, "platform", "win32")
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setenv("QEMU_DIR", str(tmp_path))
+    exe = tmp_path / "qemu-system-x86_64.exe"
+    exe.write_text("")
+
+    assert vm.find_qemu("x86_64") == str(exe)
+
+
+def test_find_qemu_falls_back_to_versioned_windows_subdir(tmp_path, monkeypatch):
+    # Some non-installer QEMU-for-Windows layouts nest the binary one level
+    # down in a version-named folder instead of directly under QEMU_DIR.
+    monkeypatch.setattr(vm.sys, "platform", "win32")
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setenv("QEMU_DIR", str(tmp_path))
+    versioned = tmp_path / "qemu-8.2.0"
+    versioned.mkdir()
+    exe = versioned / "qemu-system-x86_64.exe"
+    exe.write_text("")
+
+    assert vm.find_qemu("x86_64") == str(exe)
+
+
+def test_installed_arches_finds_versioned_windows_subdir(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm.sys, "platform", "win32")
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setenv("QEMU_DIR", str(tmp_path))
+    versioned = tmp_path / "qemu-8.2.0"
+    versioned.mkdir()
+    (versioned / "qemu-system-aarch64.exe").write_text("")
+
+    assert vm._installed_arches() == ["aarch64"]
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
 def test_version_returns_qemu_version_output(tmp_path, monkeypatch):
     _make_fake_qemu_script(tmp_path, 'echo "QEMU emulator version 8.2.1 (Debian)"')

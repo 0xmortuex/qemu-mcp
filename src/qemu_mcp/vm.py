@@ -21,11 +21,33 @@ _WINDOWS_QEMU_DIRS = [
 ]
 
 
+def _windows_search_dirs() -> list[str]:
+    """QEMU_DIR/_WINDOWS_QEMU_DIRS, plus one level of their subdirectories.
+
+    Covers both a flat install (`...\qemu\qemu-system-x86_64.exe`) and one
+    nested a version folder deeper (`...\qemu\qemu-8.2.0\qemu-system-x86_64.exe`),
+    which some non-installer QEMU-for-Windows distributions (and manual
+    extracts) use instead of a flat layout.
+    """
+    bases = [d for d in [os.environ.get("QEMU_DIR"), *_WINDOWS_QEMU_DIRS] if d]
+    dirs = list(bases)
+    for base in bases:
+        try:
+            entries = os.listdir(base)
+        except OSError:
+            continue
+        for entry in entries:
+            sub = os.path.join(base, entry)
+            if os.path.isdir(sub):
+                dirs.append(sub)
+    return dirs
+
+
 def _installed_arches() -> list[str]:
     """Scan PATH (and the Windows QEMU dirs) for other qemu-system-* binaries."""
     dirs = os.environ.get("PATH", "").split(os.pathsep)
     if sys.platform == "win32":
-        dirs = [os.environ.get("QEMU_DIR"), *_WINDOWS_QEMU_DIRS, *dirs]
+        dirs = [*_windows_search_dirs(), *dirs]
     found = set()
     for directory in dirs:
         if not directory:
@@ -47,8 +69,8 @@ def find_qemu(arch: str) -> str:
     if path:
         return path
     if sys.platform == "win32":
-        for base in [os.environ.get("QEMU_DIR"), *_WINDOWS_QEMU_DIRS]:
-            if base and os.path.isfile(os.path.join(base, exe + ".exe")):
+        for base in _windows_search_dirs():
+            if os.path.isfile(os.path.join(base, exe + ".exe")):
                 return os.path.join(base, exe + ".exe")
     found = _installed_arches()
     hint = (
