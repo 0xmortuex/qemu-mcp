@@ -120,6 +120,7 @@ _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
     "append": frozenset({"-append"}),
     "initrd": frozenset({"-initrd"}),
     "disk": frozenset({"-drive"}),
+    "smp": frozenset({"-smp"}),
 }
 
 
@@ -132,6 +133,7 @@ def _check_extra_args_conflicts(
     append: str | None,
     initrd: str | None,
     disk: str | None,
+    smp: int | None,
 ) -> None:
     """Reject an extra_args token that duplicates a flag vm.boot() already sets.
 
@@ -141,7 +143,10 @@ def _check_extra_args_conflicts(
     collision surface as a confusing boot failure.
     """
     controlled = set(_ALWAYS_SET_FLAGS)
-    given = {"machine": machine, "iso": iso, "kernel": kernel, "append": append, "initrd": initrd, "disk": disk}
+    given = {
+        "machine": machine, "iso": iso, "kernel": kernel, "append": append,
+        "initrd": initrd, "disk": disk, "smp": smp,
+    }
     for param, flags in _CONDITIONAL_FLAGS.items():
         if given[param]:
             controlled |= flags
@@ -264,6 +269,7 @@ def boot(
     disk: str | None,
     extra_args: str | None,
     machine: str | None = None,
+    smp: int | None = None,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> VM:
@@ -276,6 +282,8 @@ def boot(
         raise ValueError(
             f"invalid memory_mb {memory_mb!r}: must be a positive number of megabytes"
         )
+    if smp is not None and smp <= 0:
+        raise ValueError(f"invalid smp {smp!r}: must be a positive number of CPUs")
     if qmp_connect_timeout_s <= 0:
         raise ValueError(
             f"invalid qmp_connect_timeout_s {qmp_connect_timeout_s!r}: must be positive"
@@ -293,7 +301,8 @@ def boot(
         except ValueError as e:
             raise ValueError(f"invalid extra_args {extra_args!r}: {e}") from None
     _check_extra_args_conflicts(
-        extra_argv, machine=machine, iso=iso, kernel=kernel, append=append, initrd=initrd, disk=disk
+        extra_argv, machine=machine, iso=iso, kernel=kernel, append=append,
+        initrd=initrd, disk=disk, smp=smp,
     )
 
     reap_dead()
@@ -327,6 +336,8 @@ def boot(
         ]
         if machine:
             args += ["-M", machine]
+        if smp:
+            args += ["-smp", str(smp)]
         if iso:
             args += ["-cdrom", iso, "-boot", "d"]
         if kernel:

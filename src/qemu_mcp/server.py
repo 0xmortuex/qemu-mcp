@@ -43,6 +43,7 @@ def qemu_boot(
     memory_mb: int = 256,
     extra_args: str | None = None,
     machine: str | None = None,
+    smp: int | None = None,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> str:
@@ -57,12 +58,14 @@ def qemu_boot(
     be positive. arch picks the
     qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...). machine is
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
-    have no default machine and need e.g. machine="virt". extra_args is passed
+    have no default machine and need e.g. machine="virt". smp sets the number
+    of virtual CPUs (QEMU -smp), for testing SMP-aware guest code; must be
+    positive when given. extra_args is passed
     to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0"
     (must be valid shell-style quoting, e.g. no unbalanced quotes). extra_args
     may not contain a flag qemu_boot already sets itself: -name, -m, -display,
     -qmp, -chardev, -serial always; -M/-machine, -cdrom/-boot, -kernel,
-    -append, -initrd, -drive when the corresponding param above is also given.
+    -append, -initrd, -drive, -smp when the corresponding param above is also given.
     qmp_connect_timeout_s bounds how long to retry connecting to QEMU's QMP
     socket after launch (raise it on a slow/loaded host where QEMU's first
     launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how
@@ -73,12 +76,13 @@ def qemu_boot(
     The VM keeps running until qemu_stop; serial output is captured continuously.
     """
     vm = vmmod.boot(
-        name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine,
+        name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine, smp,
         qmp_connect_timeout_s, qmp_read_timeout_s,
     )
     machine_note = f", -M {machine}" if machine else ""
+    smp_note = f", -smp {smp}" if smp else ""
     return (
-        f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB{machine_note}).\n"
+        f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB{machine_note}{smp_note}).\n"
         f"Serial log: {vm.serial_path}\n"
         f"Next: qemu_wait_serial for a boot marker, or qemu_screenshot to see the display."
     )
