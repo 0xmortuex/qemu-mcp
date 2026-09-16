@@ -251,7 +251,6 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
         ("-kernel other-kernel", {"kernel": "some-kernel"}),
         ("-append console=ttyS1", {"kernel": "some-kernel", "append": "console=ttyS0"}),
         ("-initrd other.img", {"kernel": "some-kernel", "initrd": "some.img"}),
-        ("-drive file=other.img", {"disk": "some.img"}),
         ("-smp 4", {"smp": 2}),
     ],
 )
@@ -279,6 +278,9 @@ def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, 
         ("-cdrom other.iso", {"iso": None, "disk": "some.img"}),
         # -kernel/-append/-initrd only conflict when their own param is given.
         ("-kernel other-kernel", {"kernel": None}),
+        # -drive never conflicts, whether or not disk= is given - see
+        # test_boot_allows_a_second_drive_in_extra_args_alongside_disk below
+        # for the disk= given case, which is the one that used to be rejected.
         ("-drive file=other.img", {"disk": None}),
         # -smp only conflicts when smp= is actually given.
         ("-smp 4", {"smp": None}),
@@ -298,6 +300,37 @@ def test_boot_allows_extra_args_flag_when_its_own_param_is_not_given(extra_args,
     with pytest.raises((ValueError, FileNotFoundError)) as excinfo:
         vm.boot(**boot_kwargs)
     assert "extra_args contains" not in str(excinfo.value)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_allows_a_second_drive_in_extra_args_alongside_disk(tmp_path, monkeypatch):
+    # QEMU allows repeated -drive flags for unrelated disks (a boot disk plus
+    # a scratch/data disk is a common osdev test pattern) - a second -drive
+    # in extra_args pointed at a *different* file from disk= should boot,
+    # not be rejected as a pre-flight "collision" the way -m/-M etc. are.
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    disk = tmp_path / "boot.img"
+    disk.write_bytes(b"")
+    data_disk = tmp_path / "data.img"
+    data_disk.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-second-drive", arch="x86_64", memory_mb=64,
+            iso=None, kernel=None, append=None, initrd=None,
+            disk=str(disk), extra_args=f"-drive file={data_disk},format=raw",
+        )
+        assert booted.cmdline.count("-drive") == 2
+        assert f"file={disk},format=raw" in booted.cmdline
+        assert f"file={data_disk},format=raw" in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-with-second-drive", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
 
 
 def test_boot_does_not_create_workdir_for_conflicting_extra_args(monkeypatch):

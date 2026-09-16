@@ -112,6 +112,13 @@ _QCOW2_MAGIC = b"QFI\xfb"
 # Flags vm.boot() always sets on the QEMU command line, plus the ones it
 # only sets when the corresponding qemu_boot param is given. -M/-machine
 # are QEMU synonyms for the same flag, so both are guarded together.
+# -drive is deliberately NOT here even though `disk` sets one: unlike -m/-M/
+# etc., QEMU natively supports repeated -drive flags for unrelated disks
+# (e.g. a second data disk alongside the boot disk from `disk`), so a blanket
+# token-membership ban blocked a legitimate, common use case instead of an
+# actual collision. A second -drive pointed at the *same* file `disk` uses
+# would still fail, but as a QEMU image-locking error at boot, surfaced
+# through the existing "QEMU exited immediately" path rather than pre-flight.
 _ALWAYS_SET_FLAGS = frozenset({"-name", "-m", "-display", "-qmp", "-chardev", "-serial"})
 _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
     "machine": frozenset({"-M", "-machine"}),
@@ -119,7 +126,6 @@ _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
     "kernel": frozenset({"-kernel"}),
     "append": frozenset({"-append"}),
     "initrd": frozenset({"-initrd"}),
-    "disk": frozenset({"-drive"}),
     "smp": frozenset({"-smp"}),
 }
 

@@ -65,7 +65,12 @@ def qemu_boot(
     (must be valid shell-style quoting, e.g. no unbalanced quotes). extra_args
     may not contain a flag qemu_boot already sets itself: -name, -m, -display,
     -qmp, -chardev, -serial always; -M/-machine, -cdrom/-boot, -kernel,
-    -append, -initrd, -drive, -smp when the corresponding param above is also given.
+    -append, -initrd, -smp when the corresponding param above is also given.
+    -drive is exempt from this check even when disk is given - QEMU allows
+    repeated -drive flags, so extra_args can add further disks, e.g.
+    extra_args="-drive file=data.img,format=raw" for a second drive alongside
+    disk (pointing extra_args's -drive at the same file as disk will still
+    fail, but as a QEMU image-locking error at boot, not a pre-flight one).
     qmp_connect_timeout_s bounds how long to retry connecting to QEMU's QMP
     socket after launch (raise it on a slow/loaded host where QEMU's first
     launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how
