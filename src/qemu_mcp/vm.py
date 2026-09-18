@@ -127,6 +127,7 @@ _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
     "append": frozenset({"-append"}),
     "initrd": frozenset({"-initrd"}),
     "smp": frozenset({"-smp"}),
+    "accel": frozenset({"-accel"}),
 }
 
 
@@ -140,6 +141,7 @@ def _check_extra_args_conflicts(
     initrd: str | None,
     disk: str | None,
     smp: int | None,
+    accel: str | None,
 ) -> None:
     """Reject an extra_args token that duplicates a flag vm.boot() already sets.
 
@@ -151,7 +153,7 @@ def _check_extra_args_conflicts(
     controlled = set(_ALWAYS_SET_FLAGS)
     given = {
         "machine": machine, "iso": iso, "kernel": kernel, "append": append,
-        "initrd": initrd, "disk": disk, "smp": smp,
+        "initrd": initrd, "disk": disk, "smp": smp, "accel": accel,
     }
     for param, flags in _CONDITIONAL_FLAGS.items():
         if given[param]:
@@ -276,6 +278,7 @@ def boot(
     extra_args: str | None,
     machine: str | None = None,
     smp: int | None = None,
+    accel: str | None = None,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> VM:
@@ -308,7 +311,7 @@ def boot(
             raise ValueError(f"invalid extra_args {extra_args!r}: {e}") from None
     _check_extra_args_conflicts(
         extra_argv, machine=machine, iso=iso, kernel=kernel, append=append,
-        initrd=initrd, disk=disk, smp=smp,
+        initrd=initrd, disk=disk, smp=smp, accel=accel,
     )
 
     reap_dead()
@@ -344,6 +347,8 @@ def boot(
             args += ["-M", machine]
         if smp:
             args += ["-smp", str(smp)]
+        if accel:
+            args += ["-accel", accel]
         if iso:
             args += ["-cdrom", iso, "-boot", "d"]
         if kernel:

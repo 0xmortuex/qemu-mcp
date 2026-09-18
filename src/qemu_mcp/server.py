@@ -44,6 +44,7 @@ def qemu_boot(
     extra_args: str | None = None,
     machine: str | None = None,
     smp: int | None = None,
+    accel: str | None = None,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> str:
@@ -60,12 +61,20 @@ def qemu_boot(
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
     have no default machine and need e.g. machine="virt". smp sets the number
     of virtual CPUs (QEMU -smp), for testing SMP-aware guest code; must be
-    positive when given. extra_args is passed
+    positive when given. accel is passed as QEMU's -accel (e.g. "kvm",
+    "kvm:tcg" to fall back to software emulation if KVM isn't available,
+    "hvf"/"hvf:tcg" on macOS, "whpx:tcg" on Windows) to opt into hardware
+    acceleration; left unset, QEMU defaults to TCG (software emulation),
+    which is correct but slow for anything beyond a trivial kernel. There's
+    no host-capability probe for this - if the requested accelerator isn't
+    available, QEMU itself fails immediately and that failure (including
+    QEMU's own explanation) is surfaced the same way any other immediate
+    boot failure is, in the raised error. extra_args is passed
     to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0"
     (must be valid shell-style quoting, e.g. no unbalanced quotes). extra_args
     may not contain a flag qemu_boot already sets itself: -name, -m, -display,
     -qmp, -chardev, -serial always; -M/-machine, -cdrom/-boot, -kernel,
-    -append, -initrd, -smp when the corresponding param above is also given.
+    -append, -initrd, -smp, -accel when the corresponding param above is also given.
     -drive is exempt from this check even when disk is given - QEMU allows
     repeated -drive flags, so extra_args can add further disks, e.g.
     extra_args="-drive file=data.img,format=raw" for a second drive alongside
@@ -82,12 +91,14 @@ def qemu_boot(
     """
     vm = vmmod.boot(
         name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine, smp,
-        qmp_connect_timeout_s, qmp_read_timeout_s,
+        accel, qmp_connect_timeout_s, qmp_read_timeout_s,
     )
     machine_note = f", -M {machine}" if machine else ""
     smp_note = f", -smp {smp}" if smp else ""
+    accel_note = f", -accel {accel}" if accel else ""
     return (
-        f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB{machine_note}{smp_note}).\n"
+        f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB"
+        f"{machine_note}{smp_note}{accel_note}).\n"
         f"Serial log: {vm.serial_path}\n"
         f"Next: qemu_wait_serial for a boot marker, or qemu_screenshot to see the display."
     )

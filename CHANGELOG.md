@@ -34,6 +34,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `poll_interval_s` parameter on `qemu_wait_serial` (already present on
   `qemu_wait_screen`).
 - A `"--"` escape in `qemu_key` combo syntax to send a literal `-`.
+- `accel` parameter on `qemu_boot`, to opt into hardware acceleration
+  (`-accel kvm`/`hvf`/`whpx`, with a `:tcg` fallback) instead of the
+  software-only TCG default.
 
 ### Fixed
 - `qemu_boot`'s `disk` param was hardcoded to raw format, silently

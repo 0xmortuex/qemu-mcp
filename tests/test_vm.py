@@ -252,6 +252,7 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
         ("-append console=ttyS1", {"kernel": "some-kernel", "append": "console=ttyS0"}),
         ("-initrd other.img", {"kernel": "some-kernel", "initrd": "some.img"}),
         ("-smp 4", {"smp": 2}),
+        ("-accel tcg", {"accel": "kvm"}),
     ],
 )
 def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, kwargs):
@@ -284,6 +285,8 @@ def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, 
         ("-drive file=other.img", {"disk": None}),
         # -smp only conflicts when smp= is actually given.
         ("-smp 4", {"smp": None}),
+        # -accel only conflicts when accel= is actually given.
+        ("-accel tcg", {"accel": None}),
     ],
 )
 def test_boot_allows_extra_args_flag_when_its_own_param_is_not_given(extra_args, kwargs):
@@ -1026,6 +1029,53 @@ def test_boot_omits_smp_flag_when_not_given(tmp_path, monkeypatch):
         assert "-smp" not in booted.cmdline
     finally:
         booted = vm._vms.pop("boot-without-smp", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_passes_accel_onto_the_qemu_command_line(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-accel", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, accel="kvm:tcg",
+        )
+        assert "-accel" in booted.cmdline
+        assert booted.cmdline[booted.cmdline.index("-accel") + 1] == "kvm:tcg"
+    finally:
+        booted = vm._vms.pop("boot-with-accel", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_omits_accel_flag_when_not_given(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-without-accel", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert "-accel" not in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-without-accel", None)
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)

@@ -30,7 +30,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 
 | Tool | What it does |
 |------|--------------|
-| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
+| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
 | `qemu_version` | Report the installed `qemu-system-<arch> --version` output, without booting a VM |
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
@@ -112,6 +112,23 @@ qemu_boot(name="r", kernel="build/kernel-riscv64.elf", arch="riscv64", machine="
 ```
 
 Check `qemu-system-<arch> -M help` for the full list of machines an arch supports.
+
+### Hardware acceleration
+
+`qemu_boot` defaults to TCG (QEMU's software emulator) with no `accel` given -
+correct on any host, but a real slowdown for anything beyond a trivial kernel.
+Opt into your host's accelerator with `accel`, falling back to TCG if it's
+unavailable so the boot doesn't hard-fail on a host without it:
+
+```
+qemu_boot(name="fast", kernel="build/kernel.elf", accel="kvm:tcg")   # Linux
+qemu_boot(name="fast", kernel="build/kernel.elf", accel="hvf:tcg")   # macOS
+qemu_boot(name="fast", kernel="build/kernel.elf", accel="whpx:tcg")  # Windows
+```
+
+If the requested accelerator genuinely isn't usable on the host (no `/dev/kvm`
+permission, virtualization disabled in firmware, etc.) QEMU itself reports why
+QEMU exited, and `qemu_boot` surfaces that in the error it raises.
 
 ## Tests
 
