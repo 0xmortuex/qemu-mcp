@@ -113,6 +113,21 @@ qemu_boot(name="r", kernel="build/kernel-riscv64.elf", arch="riscv64", machine="
 
 Check `qemu-system-<arch> -M help` for the full list of machines an arch supports.
 
+`virt` has no default display device — unlike the PC-family boards `x86_64`/
+`i386` boot with, it doesn't wire up VGA on its own. `qemu_screenshot`/
+`qemu_wait_screen` against a `virt` VM will see an empty/black framebuffer (or
+a QMP error, depending on QEMU version) unless the guest itself sets one up,
+which most bare-metal aarch64/riscv64 kernels don't. Add a display device
+explicitly if you need screenshots:
+
+```
+qemu_boot(name="a", kernel="build/kernel-aarch64.elf", arch="aarch64",
+          machine="virt", extra_args="-device virtio-gpu-pci")
+```
+
+(This is documented QEMU `virt`-board behavior, not verified against a real
+boot in this environment — no QEMU available here.)
+
 ### Hardware acceleration
 
 `qemu_boot` defaults to TCG (QEMU's software emulator) with no `accel` given -
