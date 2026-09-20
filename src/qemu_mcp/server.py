@@ -73,13 +73,19 @@ def qemu_boot(
     to QEMU verbatim, e.g. "-netdev user,id=n0 -device rtl8139,netdev=n0"
     (must be valid shell-style quoting, e.g. no unbalanced quotes). extra_args
     may not contain a flag qemu_boot already sets itself: -name, -m, -display,
-    -qmp, -chardev, -serial always; -M/-machine, -cdrom/-boot, -kernel,
-    -append, -initrd, -smp, -accel when the corresponding param above is also given.
+    -qmp always; -M/-machine, -cdrom/-boot, -kernel, -append, -initrd, -smp,
+    -accel when the corresponding param above is also given.
     -drive is exempt from this check even when disk is given - QEMU allows
     repeated -drive flags, so extra_args can add further disks, e.g.
     extra_args="-drive file=data.img,format=raw" for a second drive alongside
     disk (pointing extra_args's -drive at the same file as disk will still
     fail, but as a QEMU image-locking error at boot, not a pre-flight one).
+    -chardev/-serial are similarly exempt except for the exact chardev
+    qemu_boot's own serial console uses (id=serial0 / chardev:serial0) -
+    extra_args can add an unrelated -chardev or a second -serial (e.g. a
+    COM2 backed by another chardev) freely, but reusing id=serial0 or
+    pointing another -serial at chardev:serial0 is rejected, since that's
+    the pair qemu_serial/qemu_serial_send depend on.
     qmp_connect_timeout_s bounds how long to retry connecting to QEMU's QMP
     socket after launch (raise it on a slow/loaded host where QEMU's first
     launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how

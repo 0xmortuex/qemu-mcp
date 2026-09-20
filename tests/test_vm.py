@@ -241,8 +241,8 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
         ("-m 512", {}),
         ("-display gtk", {}),
         ("-qmp tcp:127.0.0.1:1234,server,nowait", {}),
-        ("-chardev socket,id=x", {}),
-        ("-serial chardev:x", {}),
+        ("-chardev socket,id=serial0,host=127.0.0.1,port=1", {}),
+        ("-serial chardev:serial0", {}),
         # Conditional flags: only conflict when the corresponding param is given.
         ("-M q35", {"machine": "virt"}),
         ("-machine q35", {"machine": "virt"}),
@@ -287,6 +287,11 @@ def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, 
         ("-smp 4", {"smp": None}),
         # -accel only conflicts when accel= is actually given.
         ("-accel tcg", {"accel": None}),
+        # -chardev/-serial never conflict unless they reuse qemu-mcp's own
+        # id=serial0 chardev or chardev:serial0 backend - see
+        # test_boot_allows_unrelated_chardev_and_serial_in_extra_args below
+        # for more cases, this one just confirms it's not a blanket ban.
+        ("-chardev socket,id=mon1,path=/tmp/mon1", {}),
     ],
 )
 def test_boot_allows_extra_args_flag_when_its_own_param_is_not_given(extra_args, kwargs):
@@ -334,6 +339,54 @@ def test_boot_allows_a_second_drive_in_extra_args_alongside_disk(tmp_path, monke
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_allows_unrelated_chardev_and_serial_in_extra_args(tmp_path, monkeypatch):
+    # QEMU allows repeated -chardev/-serial for unrelated devices (a second
+    # COM port, a chardev backing something else) - only reusing vm.boot()'s
+    # own id=serial0 chardev or chardev:serial0 backend should be rejected
+    # (test_boot_rejects_extra_args_that_collide_with_controlled_flags above
+    # covers that case); an unrelated id/backend should boot fine.
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    disk = tmp_path / "boot.img"
+    disk.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-second-serial", arch="x86_64", memory_mb=64,
+            iso=None, kernel=None, append=None, initrd=None,
+            disk=str(disk),
+            extra_args="-chardev socket,id=mon1,path=/tmp/mon1 -serial /dev/null",
+        )
+        assert booted.cmdline.count("-chardev") == 2
+        assert booted.cmdline.count("-serial") == 2
+        assert "socket,id=mon1,path=/tmp/mon1" in booted.cmdline
+        assert "/dev/null" in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-with-second-serial", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+def test_extra_args_serial_conflict_ignores_unrelated_chardev_and_serial():
+    # Direct unit coverage of the keyed comparison itself, without going
+    # through a full boot() - a bare -chardev/-serial with a different
+    # id/backend from qemu-mcp's own id=serial0 is never a conflict.
+    assert vm._extra_args_serial_conflict(["-chardev", "socket,id=mon1,path=/tmp/x"]) is None
+    assert vm._extra_args_serial_conflict(["-serial", "/dev/null"]) is None
+    assert vm._extra_args_serial_conflict(["-serial", "chardev:other"]) is None
+
+
+def test_extra_args_serial_conflict_catches_id_and_backend_reuse():
+    assert vm._extra_args_serial_conflict(
+        ["-chardev", "socket,id=serial0,host=127.0.0.1,port=1"]
+    ) == "-chardev socket,id=serial0,host=127.0.0.1,port=1"
+    assert vm._extra_args_serial_conflict(["-serial", "chardev:serial0"]) == "-serial chardev:serial0"
 
 
 def test_boot_does_not_create_workdir_for_conflicting_extra_args(monkeypatch):

@@ -119,7 +119,13 @@ _QCOW2_MAGIC = b"QFI\xfb"
 # actual collision. A second -drive pointed at the *same* file `disk` uses
 # would still fail, but as a QEMU image-locking error at boot, surfaced
 # through the existing "QEMU exited immediately" path rather than pre-flight.
-_ALWAYS_SET_FLAGS = frozenset({"-name", "-m", "-display", "-qmp", "-chardev", "-serial"})
+# -chardev/-serial are also NOT here for the same reason: QEMU allows
+# repeated -chardev/-serial for unrelated devices (a second COM port, a
+# chardev backing something else) - only a token that reuses vm.boot()'s own
+# id=serial0 chardev or its chardev:serial0 serial backend actually collides
+# with the load-bearing pair qemu_serial/qemu_serial_send depend on. See
+# _extra_args_serial_conflict below for that keyed comparison.
+_ALWAYS_SET_FLAGS = frozenset({"-name", "-m", "-display", "-qmp"})
 _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
     "machine": frozenset({"-M", "-machine"}),
     "iso": frozenset({"-cdrom", "-boot"}),
@@ -129,6 +135,27 @@ _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
     "smp": frozenset({"-smp"}),
     "accel": frozenset({"-accel"}),
 }
+
+_SERIAL_CHARDEV_ID = "serial0"
+_SERIAL_BACKEND = f"chardev:{_SERIAL_CHARDEV_ID}"
+
+
+def _extra_args_serial_conflict(extra_argv: list[str]) -> str | None:
+    """Return the -chardev/-serial token pair that collides with vm.boot()'s
+    own serial chardev (id=serial0), or None if extra_argv adds none.
+
+    Unlike -m/-M/etc., a bare "-chardev" or "-serial" in extra_argv isn't
+    itself a collision - only one that names the exact id/backend vm.boot()
+    already uses is: a second -chardev with an unrelated id=, or a second
+    -serial pointed at a different backend (another chardev, a COM port,
+    /dev/null, ...), is a legitimate additional device, not a duplicate.
+    """
+    for flag, value in zip(extra_argv, extra_argv[1:]):
+        if flag == "-chardev" and f"id={_SERIAL_CHARDEV_ID}" in value.split(","):
+            return f"-chardev {value}"
+        if flag == "-serial" and value == _SERIAL_BACKEND:
+            return f"-serial {value}"
+    return None
 
 
 def _check_extra_args_conflicts(
@@ -158,7 +185,10 @@ def _check_extra_args_conflicts(
     for param, flags in _CONDITIONAL_FLAGS.items():
         if given[param]:
             controlled |= flags
-    conflicts = sorted(controlled & set(extra_argv))
+    conflicts: list[str] = sorted(controlled & set(extra_argv))
+    serial_conflict = _extra_args_serial_conflict(extra_argv)
+    if serial_conflict is not None:
+        conflicts.append(serial_conflict)
     if conflicts:
         raise ValueError(
             f"extra_args contains {conflicts!r}, which qemu-mcp already sets on the "
