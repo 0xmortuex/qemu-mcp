@@ -37,6 +37,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `accel` parameter on `qemu_boot`, to opt into hardware acceleration
   (`-accel kvm`/`hvf`/`whpx`, with a `:tcg` fallback) instead of the
   software-only TCG default.
+- `cpu` parameter on `qemu_boot`, to select or customize the emulated CPU
+  model (`-cpu qemu64,+avx`/`max`/`host`...) instead of QEMU's per-arch
+  default.
 
 ### Fixed
 - `qemu_boot`'s `disk` param was hardcoded to raw format, silently

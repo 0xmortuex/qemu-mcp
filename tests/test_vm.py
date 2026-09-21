@@ -253,6 +253,7 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
         ("-initrd other.img", {"kernel": "some-kernel", "initrd": "some.img"}),
         ("-smp 4", {"smp": 2}),
         ("-accel tcg", {"accel": "kvm"}),
+        ("-cpu qemu64", {"cpu": "max"}),
     ],
 )
 def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, kwargs):
@@ -287,6 +288,8 @@ def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, 
         ("-smp 4", {"smp": None}),
         # -accel only conflicts when accel= is actually given.
         ("-accel tcg", {"accel": None}),
+        # -cpu only conflicts when cpu= is actually given.
+        ("-cpu max", {"cpu": None}),
         # -chardev/-serial never conflict unless they reuse qemu-mcp's own
         # id=serial0 chardev or chardev:serial0 backend - see
         # test_boot_allows_unrelated_chardev_and_serial_in_extra_args below
@@ -1129,6 +1132,53 @@ def test_boot_omits_accel_flag_when_not_given(tmp_path, monkeypatch):
         assert "-accel" not in booted.cmdline
     finally:
         booted = vm._vms.pop("boot-without-accel", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_passes_cpu_onto_the_qemu_command_line(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-cpu", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, cpu="qemu64,+avx",
+        )
+        assert "-cpu" in booted.cmdline
+        assert booted.cmdline[booted.cmdline.index("-cpu") + 1] == "qemu64,+avx"
+    finally:
+        booted = vm._vms.pop("boot-with-cpu", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_omits_cpu_flag_when_not_given(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-without-cpu", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert "-cpu" not in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-without-cpu", None)
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
