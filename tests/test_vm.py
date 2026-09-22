@@ -677,6 +677,49 @@ def test_qemu_screenshot_uses_a_unique_tempfile_and_cleans_up(tmp_path):
         vm._vms.pop("screenshot-test", None)
 
 
+class _CrashDuringScreendumpProc(_FakeProc):
+    """Reports running until screendump is issued, then looks exited -
+    simulates QEMU dying between the screendump command and its file write."""
+
+    def __init__(self):
+        self._running = True
+        self.returncode = 1
+
+    def poll(self):
+        return None if self._running else self.returncode
+
+
+class _CrashDuringScreendumpQMP(_FakeQMP):
+    """screendump 'succeeds' (no QMPError) but never writes the file, as if
+    QEMU crashed right after accepting the command."""
+
+    def __init__(self, proc):
+        self.proc = proc
+
+    def command(self, name, **kwargs):
+        assert name == "screendump"
+        self.proc._running = False
+        return {}
+
+
+def test_qemu_screenshot_raises_clearly_if_vm_exits_mid_screendump(tmp_path, monkeypatch):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-screenshot-crash-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("screenshot-crash-test", workdir)
+    fake.proc = _CrashDuringScreendumpProc()
+    fake.qmp = _CrashDuringScreendumpQMP(fake.proc)
+    monkeypatch.setattr(server.time, "sleep", lambda s: None)
+
+    try:
+        with pytest.raises(RuntimeError, match="exited while taking a screenshot"):
+            server.qemu_screenshot(name="screenshot-crash-test")
+        assert list(workdir.glob("*.ppm")) == [], "the empty tempfile must still be cleaned up"
+    finally:
+        vm._vms.pop("screenshot-crash-test", None)
+
+
 def test_qemu_wait_screen_uses_a_unique_tempfile_and_cleans_up(tmp_path):
     from qemu_mcp import server
 

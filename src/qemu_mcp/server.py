@@ -122,7 +122,9 @@ def qemu_screenshot(name: str) -> Image:
 
     Works headless - the guest's VGA framebuffer is captured via QMP
     screendump. Use it to see boot screens, kernel panics, GUIs, or a
-    text console that doesn't write to serial.
+    text console that doesn't write to serial. Raises a clear error
+    (instead of an opaque image-decoding failure) if the VM exits while
+    the screendump is in flight.
     """
     from PIL import Image as PILImage
 
@@ -136,6 +138,12 @@ def qemu_screenshot(name: str) -> Image:
             if os.path.getsize(ppm) > 0:
                 break
             time.sleep(0.05)
+        else:
+            if not vm.running:
+                raise RuntimeError(
+                    f"VM {name!r} exited while taking a screenshot "
+                    f"(code {vm.proc.returncode})"
+                )
         with PILImage.open(ppm) as im:
             buf = io.BytesIO()
             im.save(buf, format="PNG")
