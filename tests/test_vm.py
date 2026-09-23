@@ -743,6 +743,33 @@ def test_qemu_wait_screen_uses_a_unique_tempfile_and_cleans_up(tmp_path):
         vm._vms.pop("wait-screen-test", None)
 
 
+def test_qemu_wait_screen_reports_exited_not_settled_if_vm_exits_mid_screendump(
+    tmp_path, monkeypatch
+):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-screen-crash-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("wait-screen-crash-test", workdir)
+    fake.proc = _CrashDuringScreendumpProc()
+    fake.qmp = _CrashDuringScreendumpQMP(fake.proc)
+    monkeypatch.setattr(server.time, "sleep", lambda s: None)
+
+    try:
+        # stable_polls=1 means a single poll would normally be enough to
+        # report SETTLED - the VM-exited check must win the race instead,
+        # even though the (empty, never-written) ppm file hashes just fine.
+        result = server.qemu_wait_screen(
+            name="wait-screen-crash-test", timeout_s=5, poll_interval_s=0.01, stable_polls=1
+        )
+        assert result.startswith("VM EXITED"), (
+            "an empty frame from a mid-screendump crash must not count as a settled frame"
+        )
+        assert list(workdir.glob("*.ppm")) == []
+    finally:
+        vm._vms.pop("wait-screen-crash-test", None)
+
+
 class _HMPQMP(_FakeQMP):
     """human-monitor-command returns whatever text the fake HMP command prints."""
 

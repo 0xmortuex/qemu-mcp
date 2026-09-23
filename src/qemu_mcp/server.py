@@ -377,10 +377,10 @@ def qemu_wait_screen(
                     break
                 time.sleep(0.05)
             polls += 1
-            if tracker.update(screenmod.hash_file(ppm)):
-                return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
             if not vm.running:
                 return f"VM EXITED after {polls} polls"
+            if tracker.update(screenmod.hash_file(ppm)):
+                return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
             time.sleep(poll_interval_s)
         return f"TIMEOUT after {timeout_s}s ({polls} polls)"
     finally:
