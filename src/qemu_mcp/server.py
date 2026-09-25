@@ -288,7 +288,10 @@ def qemu_serial(name: str, tail_lines: int = 50) -> str:
     Works even after the VM has exited (guest crash, or `quit` via
     qemu_qmp) so you can see what it printed right before dying - the
     exited VM stays visible here until qemu_list's next call reaps it.
+    tail_lines must be positive.
     """
+    if tail_lines <= 0:
+        raise ValueError(f"invalid tail_lines {tail_lines!r}: must be positive")
     vm = vmmod.get_vm_any(name)
     note = f"(VM exited, code {vm.proc.returncode})\n" if not vm.running else ""
     text = vm.serial_text()

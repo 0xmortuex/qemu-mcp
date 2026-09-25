@@ -1455,3 +1455,20 @@ def test_qemu_type_rejects_negative_delay_ms():
             assert False, f"expected ValueError for delay_ms={bad!r}"
         except ValueError as e:
             assert "delay_ms" in str(e)
+
+
+def test_qemu_serial_rejects_non_positive_tail_lines():
+    # Regression test: vm.tail(text, lines) does text.splitlines()[-lines:],
+    # and Python has no negative zero - tail_lines=0 hit list[-0:], i.e.
+    # list[0:], returning the *entire* log instead of nothing, and a negative
+    # tail_lines silently returned a differently-wrong slice instead of
+    # raising. No VM needs to be registered: the check now fires before
+    # vmmod.get_vm_any, same pattern as qemu_type's delay_ms check above.
+    from qemu_mcp import server
+
+    for bad in (0, -1, -50):
+        try:
+            server.qemu_serial(name="no-such-vm", tail_lines=bad)
+            assert False, f"expected ValueError for tail_lines={bad!r}"
+        except ValueError as e:
+            assert "tail_lines" in str(e)
