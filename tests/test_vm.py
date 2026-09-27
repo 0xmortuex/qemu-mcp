@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 import sys
+import threading
 import time
 
 import pytest
@@ -1472,3 +1473,84 @@ def test_qemu_serial_rejects_non_positive_tail_lines():
             assert False, f"expected ValueError for tail_lines={bad!r}"
         except ValueError as e:
             assert "tail_lines" in str(e)
+
+
+class _BlockingQMPClient:
+    """Stands in for QMPClient: signals it has been constructed, then blocks
+    until the test releases it - parks boot() mid-flight (after Popen, mid
+    QMP-connect, past the point where the name was reserved in _booting but
+    before _vms[name] is written) so a second, concurrent boot() call for the
+    same name has a deterministic window to observe it as in-progress."""
+
+    started: threading.Event
+    release: threading.Event
+
+    def __init__(self, port, connect_timeout=20.0, read_timeout=15.0):
+        _BlockingQMPClient.started.set()
+        _BlockingQMPClient.release.wait(timeout=5)
+
+    def command(self, name, **kwargs):
+        return {}
+
+    def close(self):
+        pass
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_rejects_a_concurrent_boot_of_the_same_name(tmp_path, monkeypatch):
+    # Regression test for a race on the module-level _vms registry: boot()'s
+    # "is a VM already running under this name" check and its eventual
+    # _vms[name] = vm write are far apart (find_qemu, Popen, and the QMP
+    # handshake all happen in between), so two boot() calls for the same
+    # name used to both pass the check and race to write _vms[name] last -
+    # silently orphaning whichever call's QEMU process lost, untracked and
+    # unstoppable via qemu_stop. This is a real race, not a hypothetical
+    # one: sync tool functions (qemu_boot included) each run on their own
+    # worker thread under the real mcp SDK (JSONRPCDispatcher spawns a task
+    # per tools/call request - only `initialize` is handled inline on the
+    # read loop - and FuncMetadata.call_fn runs a sync tool via
+    # anyio.to_thread.run_sync), so a client pipelining two qemu_boot calls
+    # for the same name genuinely reaches boot() from two OS threads at once.
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    _BlockingQMPClient.started = threading.Event()
+    _BlockingQMPClient.release = threading.Event()
+    monkeypatch.setattr(vm, "QMPClient", _BlockingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    kwargs = dict(
+        name="concurrent-boot", arch="x86_64", memory_mb=64,
+        iso=str(iso), kernel=None, append=None, initrd=None,
+        disk=None, extra_args=None,
+    )
+    first_result = {}
+
+    def _boot_first():
+        first_result["vm"] = vm.boot(**kwargs)
+
+    first_thread = threading.Thread(target=_boot_first)
+    first_thread.start()
+    try:
+        assert _BlockingQMPClient.started.wait(timeout=5), "first boot() never reached QMPClient"
+        # The first call has reserved the name and is parked mid-connect,
+        # with nothing in _vms yet - exactly the window the pre-fix code
+        # left unguarded.
+        assert "concurrent-boot" in vm._booting
+        assert "concurrent-boot" not in vm._vms
+
+        with pytest.raises(RuntimeError, match="already being booted"):
+            vm.boot(**kwargs)
+    finally:
+        _BlockingQMPClient.release.set()
+        first_thread.join(timeout=5)
+
+    assert first_result["vm"].name == "concurrent-boot"
+    assert "concurrent-boot" not in vm._booting
+    try:
+        assert vm._vms["concurrent-boot"] is first_result["vm"]
+    finally:
+        booted = vm._vms.pop("concurrent-boot", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)

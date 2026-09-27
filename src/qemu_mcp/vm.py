@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -241,14 +242,28 @@ class VM:
 
 
 _vms: dict[str, VM] = {}
+# Sync tool functions (qemu_boot, qemu_stop, ...) each run on their own worker
+# thread (the mcp SDK dispatches concurrent tool calls via anyio.to_thread.run_sync,
+# and only `initialize` is handled inline on the read loop), so two of them can
+# be inside boot()/stop() for the same VM name at once. Guards every read and
+# write of _vms/_booting below; reap_dead() always acquires and releases it on
+# its own rather than being called while a caller already holds it.
+_vms_lock = threading.Lock()
+# Names with a boot() call in flight (reserved before the slow Popen/QMP work
+# starts, released when that call returns or raises) - closes the window where
+# two concurrent boot() calls for the same name would both pass the "not
+# already running" check and then race to overwrite _vms[name], leaking
+# whichever QEMU process lost.
+_booting: set[str] = set()
 
 
 def _lookup(name: str) -> VM:
-    vm = _vms.get(name)
-    if vm is None:
-        known = ", ".join(_vms) or "none"
-        raise KeyError(f"no VM named {name!r} (running VMs: {known})")
-    return vm
+    with _vms_lock:
+        vm = _vms.get(name)
+        if vm is None:
+            known = ", ".join(_vms) or "none"
+            raise KeyError(f"no VM named {name!r} (running VMs: {known})")
+        return vm
 
 
 def get_vm(name: str) -> VM:
@@ -273,7 +288,8 @@ def get_vm_any(name: str) -> VM:
 
 
 def list_vms() -> list[VM]:
-    return list(_vms.values())
+    with _vms_lock:
+        return list(_vms.values())
 
 
 def reap_dead() -> list[str]:
@@ -285,9 +301,10 @@ def reap_dead() -> list[str]:
     someone notices and stops it explicitly. Called opportunistically from
     boot() and qemu_list so dead entries get cleaned up on their own.
     """
-    dead = [name for name, vm in _vms.items() if not vm.running]
-    for name in dead:
-        stale = _vms.pop(name)
+    with _vms_lock:
+        dead = [name for name, vm in _vms.items() if not vm.running]
+        stale_vms = [_vms.pop(name) for name in dead]
+    for stale in stale_vms:
         stale.qmp.close()
         stale.serial_console.close()
         shutil.rmtree(stale.workdir, ignore_errors=True)
@@ -348,101 +365,113 @@ def boot(
     )
 
     reap_dead()
-    stale = _vms.get(name)
-    if stale is not None and stale.running:
-        raise RuntimeError(f"a VM named {name!r} is already running - stop it first")
-
-    if not (iso or kernel or disk):
-        raise ValueError("nothing to boot: give at least one of iso, kernel, disk")
-    for label, p in (("iso", iso), ("kernel", kernel), ("initrd", initrd), ("disk", disk)):
-        if p and not os.path.isfile(p):
-            raise FileNotFoundError(f"{label} not found: {p}")
-
-    qemu = find_qemu(arch)
-
-    last_error: RuntimeError | None = None
-    for _attempt in range(_MAX_PORT_CONFLICT_RETRIES):
-        port = _free_port()
-        serial_port = _free_port()
-        workdir = tempfile.mkdtemp(prefix=f"qemu-mcp-{name}-")
-        serial_path = os.path.join(workdir, "serial.log")
-        qemu_log = os.path.join(workdir, "qemu.log")
-
-        args = [
-            qemu,
-            "-name", name,
-            "-m", str(memory_mb),
-            "-display", "none",
-            "-qmp", f"tcp:127.0.0.1:{port},server,nowait",
-            *chardev_args(serial_path, serial_port),
-        ]
-        if machine:
-            args += ["-M", machine]
-        if smp:
-            args += ["-smp", str(smp)]
-        if accel:
-            args += ["-accel", accel]
-        if cpu:
-            args += ["-cpu", cpu]
-        if iso:
-            args += ["-cdrom", iso, "-boot", "d"]
-        if kernel:
-            args += ["-kernel", kernel]
-        if append:
-            args += ["-append", append]
-        if initrd:
-            args += ["-initrd", initrd]
-        if disk:
-            args += ["-drive", f"file={disk},format={disk_format(disk)}"]
-        args += extra_argv
-
-        with open(qemu_log, "w", encoding="utf-8") as log:
-            proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-        # subprocess.Popen dup2's the fd into the child before returning, so the
-        # child keeps writing to qemu_log after this parent-side handle closes -
-        # closing here (instead of leaving it open for the VM's whole lifetime,
-        # unclosed even by vm.stop()) avoids leaking one fd per successful boot.
-
-        try:
-            qmp = QMPClient(port, connect_timeout=qmp_connect_timeout_s, read_timeout=qmp_read_timeout_s)
-        except QMPError:
-            if proc.poll() is not None:
-                with open(qemu_log, encoding="utf-8", errors="replace") as f:
-                    detail = f.read().strip()
-                shutil.rmtree(workdir, ignore_errors=True)
-                last_error = RuntimeError(
-                    f"QEMU exited immediately (code {proc.returncode}):\n{detail}"
-                )
-                if "address already in use" in detail.lower():
-                    # _free_port() binds an ephemeral socket only to immediately
-                    # close it and hand the now-freed port number to QEMU - between
-                    # that close() and QEMU's own bind(), something else (another
-                    # concurrent qemu_boot, or an unrelated process) can grab the
-                    # same port first. Retry with a fresh pair of ports instead of
-                    # surfacing what looks like a random, non-reproducible failure.
-                    continue
-                raise last_error from None
-            proc.kill()
-            proc.wait()
-            shutil.rmtree(workdir, ignore_errors=True)
-            raise
-        else:
-            vm = VM(
-                name=name, proc=proc, qmp=qmp, workdir=workdir,
-                serial_path=serial_path, serial_console=SerialConsole(serial_port),
-                qemu_log=qemu_log, cmdline=args, arch=arch, machine=machine,
+    with _vms_lock:
+        stale = _vms.get(name)
+        if stale is not None and stale.running:
+            raise RuntimeError(f"a VM named {name!r} is already running - stop it first")
+        if name in _booting:
+            raise RuntimeError(
+                f"a VM named {name!r} is already being booted by a concurrent call"
             )
-            _vms[name] = vm
-            return vm
+        _booting.add(name)
 
-    assert last_error is not None
-    raise last_error
+    try:
+        if not (iso or kernel or disk):
+            raise ValueError("nothing to boot: give at least one of iso, kernel, disk")
+        for label, p in (("iso", iso), ("kernel", kernel), ("initrd", initrd), ("disk", disk)):
+            if p and not os.path.isfile(p):
+                raise FileNotFoundError(f"{label} not found: {p}")
+
+        qemu = find_qemu(arch)
+
+        last_error: RuntimeError | None = None
+        for _attempt in range(_MAX_PORT_CONFLICT_RETRIES):
+            port = _free_port()
+            serial_port = _free_port()
+            workdir = tempfile.mkdtemp(prefix=f"qemu-mcp-{name}-")
+            serial_path = os.path.join(workdir, "serial.log")
+            qemu_log = os.path.join(workdir, "qemu.log")
+
+            args = [
+                qemu,
+                "-name", name,
+                "-m", str(memory_mb),
+                "-display", "none",
+                "-qmp", f"tcp:127.0.0.1:{port},server,nowait",
+                *chardev_args(serial_path, serial_port),
+            ]
+            if machine:
+                args += ["-M", machine]
+            if smp:
+                args += ["-smp", str(smp)]
+            if accel:
+                args += ["-accel", accel]
+            if cpu:
+                args += ["-cpu", cpu]
+            if iso:
+                args += ["-cdrom", iso, "-boot", "d"]
+            if kernel:
+                args += ["-kernel", kernel]
+            if append:
+                args += ["-append", append]
+            if initrd:
+                args += ["-initrd", initrd]
+            if disk:
+                args += ["-drive", f"file={disk},format={disk_format(disk)}"]
+            args += extra_argv
+
+            with open(qemu_log, "w", encoding="utf-8") as log:
+                proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            # subprocess.Popen dup2's the fd into the child before returning, so the
+            # child keeps writing to qemu_log after this parent-side handle closes -
+            # closing here (instead of leaving it open for the VM's whole lifetime,
+            # unclosed even by vm.stop()) avoids leaking one fd per successful boot.
+
+            try:
+                qmp = QMPClient(port, connect_timeout=qmp_connect_timeout_s, read_timeout=qmp_read_timeout_s)
+            except QMPError:
+                if proc.poll() is not None:
+                    with open(qemu_log, encoding="utf-8", errors="replace") as f:
+                        detail = f.read().strip()
+                    shutil.rmtree(workdir, ignore_errors=True)
+                    last_error = RuntimeError(
+                        f"QEMU exited immediately (code {proc.returncode}):\n{detail}"
+                    )
+                    if "address already in use" in detail.lower():
+                        # _free_port() binds an ephemeral socket only to immediately
+                        # close it and hand the now-freed port number to QEMU - between
+                        # that close() and QEMU's own bind(), something else (another
+                        # concurrent qemu_boot, or an unrelated process) can grab the
+                        # same port first. Retry with a fresh pair of ports instead of
+                        # surfacing what looks like a random, non-reproducible failure.
+                        continue
+                    raise last_error from None
+                proc.kill()
+                proc.wait()
+                shutil.rmtree(workdir, ignore_errors=True)
+                raise
+            else:
+                vm = VM(
+                    name=name, proc=proc, qmp=qmp, workdir=workdir,
+                    serial_path=serial_path, serial_console=SerialConsole(serial_port),
+                    qemu_log=qemu_log, cmdline=args, arch=arch, machine=machine,
+                )
+                with _vms_lock:
+                    _vms[name] = vm
+                return vm
+
+        assert last_error is not None
+        raise last_error
+    finally:
+        with _vms_lock:
+            _booting.discard(name)
 
 
 def stop(name: str, force: bool) -> str:
-    vm = _vms.get(name)
-    if vm is None:
-        raise KeyError(f"no VM named {name!r}")
+    with _vms_lock:
+        vm = _vms.get(name)
+        if vm is None:
+            raise KeyError(f"no VM named {name!r}")
     outcome = "already exited"
     if vm.running:
         if not force:
@@ -472,6 +501,7 @@ def stop(name: str, force: bool) -> str:
             outcome = "killed" if force else "ACPI ignored, killed"
     vm.qmp.close()
     vm.serial_console.close()
-    del _vms[name]
+    with _vms_lock:
+        _vms.pop(name, None)
     shutil.rmtree(vm.workdir, ignore_errors=True)
     return outcome
