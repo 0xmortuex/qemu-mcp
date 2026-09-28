@@ -326,7 +326,8 @@ def qemu_wait_serial(
 
     The reliable way to know a guest reached a boot stage ("login:",
     "kernel ready", a shell prompt) before typing or screenshotting.
-    Returns the serial tail either way, prefixed FOUND or TIMEOUT.
+    Returns the serial tail either way, prefixed FOUND or TIMEOUT. Always
+    checks at least once, even if timeout_s is 0 or negative.
     poll_interval_s (default 0.25s) must be positive.
     """
     if poll_interval_s <= 0:
@@ -337,14 +338,15 @@ def qemu_wait_serial(
         )
     vm = vmmod.get_vm(name)
     deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
+    while True:
         out = vm.serial_text()
         if text in out:
             return "FOUND\n" + vmmod.tail(out, 20)
         if not vm.running:
             return "VM EXITED\n" + vmmod.tail(out, 20)
+        if time.monotonic() >= deadline:
+            return "TIMEOUT\n" + vmmod.tail(out, 20)
         time.sleep(poll_interval_s)
-    return "TIMEOUT\n" + vmmod.tail(vm.serial_text(), 20)
 
 
 @mcp.tool()
@@ -358,6 +360,7 @@ def qemu_wait_screen(
     guest (no serial output) has finished a BIOS splash or boot animation
     before you screenshot or type. For guests with serial output, prefer
     qemu_wait_serial - it doesn't need a fixed number of polls to decide.
+    Always polls at least once, even if timeout_s is 0 or negative.
     poll_interval_s must be positive.
     """
     if poll_interval_s <= 0:
@@ -373,7 +376,7 @@ def qemu_wait_screen(
     try:
         deadline = time.monotonic() + timeout_s
         polls = 0
-        while time.monotonic() < deadline:
+        while True:
             vm.qmp.command("screendump", filename=ppm)
             for _ in range(20):
                 if os.path.getsize(ppm) > 0:
@@ -384,8 +387,9 @@ def qemu_wait_screen(
                 return f"VM EXITED after {polls} polls"
             if tracker.update(screenmod.hash_file(ppm)):
                 return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
+            if time.monotonic() >= deadline:
+                return f"TIMEOUT after {timeout_s}s ({polls} polls)"
             time.sleep(poll_interval_s)
-        return f"TIMEOUT after {timeout_s}s ({polls} polls)"
     finally:
         os.remove(ppm)
 

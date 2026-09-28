@@ -1427,6 +1427,32 @@ def test_qemu_wait_screen_rejects_non_positive_stable_polls_before_vm_lookup():
         assert "stable_polls" in str(e)
 
 
+def test_qemu_wait_screen_polls_at_least_once_even_with_non_positive_timeout(tmp_path):
+    # Same shape as qemu_wait_serial's analogous fix: `while time.monotonic()
+    # < deadline` was already false for timeout_s<=0 before the loop ran
+    # once, so the display was never actually screendumped even once - the
+    # call reported "TIMEOUT after ... (0 polls)" instead of ever checking.
+    # Fixed by polling unconditionally before testing the deadline.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-screen-zero-timeout"
+    workdir.mkdir()
+    fake = _register_fake_vm("wait-screen-zero-timeout", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _ScreendumpQMP(_ONE_PIXEL_PPM)
+
+    try:
+        for bad in (0, -1):
+            result = server.qemu_wait_screen(
+                name="wait-screen-zero-timeout", timeout_s=bad, stable_polls=1
+            )
+            assert result.startswith("SETTLED"), (
+                f"timeout_s={bad!r} must still poll once before timing out"
+            )
+    finally:
+        vm._vms.pop("wait-screen-zero-timeout", None)
+
+
 def test_qemu_wait_serial_rejects_non_positive_poll_interval():
     # Same pattern as qemu_wait_screen's poll_interval_s check above: a
     # non-positive value used to reach the hardcoded time.sleep(0.25) call
@@ -1440,6 +1466,34 @@ def test_qemu_wait_serial_rejects_non_positive_poll_interval():
             assert False, f"expected ValueError for poll_interval_s={bad!r}"
         except ValueError as e:
             assert "poll_interval_s" in str(e)
+
+
+def test_qemu_wait_serial_checks_at_least_once_even_with_non_positive_timeout(tmp_path):
+    # Regression test: `while time.monotonic() < deadline` is already false
+    # for timeout_s<=0 before the loop ever runs once, so a marker that had
+    # already appeared on serial before the call was never actually checked
+    # for - the call jumped straight to TIMEOUT even though the text was
+    # right there in the log it returns as its own tail. Fixed by checking
+    # unconditionally before testing the deadline, so at least one check
+    # always happens regardless of how small/negative timeout_s is.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-serial-zero-timeout"
+    workdir.mkdir()
+    (workdir / "serial.log").write_text("boot ok\nlogin:")
+    fake = _register_fake_vm("wait-serial-zero-timeout", workdir)
+    fake.proc = _RunningFakeProc()
+
+    try:
+        for bad in (0, -1):
+            result = server.qemu_wait_serial(
+                name="wait-serial-zero-timeout", text="login:", timeout_s=bad
+            )
+            assert result.startswith("FOUND"), (
+                f"timeout_s={bad!r} must still check once before timing out"
+            )
+    finally:
+        vm._vms.pop("wait-serial-zero-timeout", None)
 
 
 def test_qemu_type_rejects_negative_delay_ms():

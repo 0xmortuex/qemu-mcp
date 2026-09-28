@@ -63,6 +63,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   its own temp file, cleaned up afterward.
 - `qemu_stop` waited out the full graceful-shutdown timeout even when the
   `system_powerdown` QMP command itself had failed to send.
+- `qemu_wait_serial`/`qemu_wait_screen` with `timeout_s<=0` skipped their
+  check/poll loop entirely and reported `TIMEOUT` unconditionally, even
+  when the text was already present or the display had already settled;
+  both now always check at least once regardless of `timeout_s`.
 - `vm.boot()` leaked one open file descriptor per successful boot (the
   parent's own handle to the QEMU log file was never closed).
 - `vm.boot()` could hand two concurrent boots the same ephemeral port; it
