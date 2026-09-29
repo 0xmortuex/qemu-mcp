@@ -521,6 +521,80 @@ def test_stop_skips_the_graceful_wait_when_powerdown_itself_fails(tmp_path, monk
     assert sleep_calls == [], "should not sleep waiting for a shutdown that was never requested"
 
 
+@pytest.mark.parametrize("graceful_timeout_s", [0, -1, -0.5])
+def test_stop_rejects_non_positive_graceful_timeout_s(graceful_timeout_s):
+    try:
+        vm.stop("no-such-vm", force=False, graceful_timeout_s=graceful_timeout_s)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(graceful_timeout_s) in str(e)
+
+
+@pytest.mark.parametrize("kill_timeout_s", [0, -1, -0.5])
+def test_stop_rejects_non_positive_kill_timeout_s(kill_timeout_s):
+    try:
+        vm.stop("no-such-vm", force=False, kill_timeout_s=kill_timeout_s)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(kill_timeout_s) in str(e)
+
+
+class _SucceedsQMP(_FakeQMP):
+    """Every command succeeds (e.g. system_powerdown reaches the guest)."""
+
+    def command(self, name, **kwargs):
+        return {}
+
+
+def test_stop_honors_graceful_timeout_s(tmp_path, monkeypatch):
+    # system_powerdown succeeds but the guest never actually shuts down -
+    # the graceful wait should run for exactly graceful_timeout_s / 0.25
+    # polls, not the hardcoded 40 (10 s), before falling back to a kill.
+    workdir = tmp_path / "qemu-mcp-graceful-timeout-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("graceful-timeout-test", workdir)
+    fake.proc = _QuitExitsProc()
+    fake.qmp = _SucceedsQMP()
+
+    sleep_calls = []
+    monkeypatch.setattr(vm.time, "sleep", lambda s: sleep_calls.append(s))
+
+    try:
+        outcome = vm.stop("graceful-timeout-test", force=False, graceful_timeout_s=0.5)
+    finally:
+        vm._vms.pop("graceful-timeout-test", None)
+
+    assert outcome == "ACPI ignored, killed"
+    assert sleep_calls == [0.25, 0.25]
+
+
+class _RecordingWaitProc(_QuitExitsProc):
+    def __init__(self):
+        super().__init__()
+        self.wait_timeouts = []
+
+    def wait(self, timeout=None):
+        self.wait_timeouts.append(timeout)
+        return super().wait(timeout)
+
+
+def test_stop_passes_kill_timeout_s_to_proc_wait(tmp_path, monkeypatch):
+    workdir = tmp_path / "qemu-mcp-kill-timeout-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("kill-timeout-test", workdir)
+    fake.proc = _RecordingWaitProc()
+    fake.qmp = _PowerdownFailsQMP()  # force=True path, skips straight to quit/kill
+
+    monkeypatch.setattr(vm.time, "sleep", lambda s: None)
+
+    try:
+        vm.stop("kill-timeout-test", force=False, kill_timeout_s=7.0)
+    finally:
+        vm._vms.pop("kill-timeout-test", None)
+
+    assert fake.proc.wait_timeouts == [7.0]
+
+
 class _RunningFakeProc(_FakeProc):
     def poll(self):
         return None

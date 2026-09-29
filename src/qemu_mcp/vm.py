@@ -467,7 +467,18 @@ def boot(
             _booting.discard(name)
 
 
-def stop(name: str, force: bool) -> str:
+def stop(
+    name: str,
+    force: bool,
+    graceful_timeout_s: float = 10.0,
+    kill_timeout_s: float = 3.0,
+) -> str:
+    if graceful_timeout_s <= 0:
+        raise ValueError(
+            f"invalid graceful_timeout_s {graceful_timeout_s!r}: must be positive"
+        )
+    if kill_timeout_s <= 0:
+        raise ValueError(f"invalid kill_timeout_s {kill_timeout_s!r}: must be positive")
     with _vms_lock:
         vm = _vms.get(name)
         if vm is None:
@@ -484,18 +495,21 @@ def stop(name: str, force: bool) -> str:
                 # Only wait for a graceful shutdown if the powerdown request
                 # actually reached the guest - if the QMP command itself
                 # failed, the guest was never asked to shut down, so waiting
-                # here just burns the full 10 s before falling back to a kill.
-                for _ in range(40):  # up to 10 s for a graceful guest shutdown
+                # here just burns the full grace period before falling back
+                # to a kill.
+                poll_interval_s = 0.25
+                polls = max(1, int(graceful_timeout_s / poll_interval_s))
+                for _ in range(polls):
                     if not vm.running:
                         break
-                    time.sleep(0.25)
+                    time.sleep(poll_interval_s)
         if vm.running:
             try:
                 vm.qmp.command("quit")
             except QMPError:
                 pass
             try:
-                vm.proc.wait(timeout=3)
+                vm.proc.wait(timeout=kill_timeout_s)
             except subprocess.TimeoutExpired:
                 vm.proc.kill()
             outcome = "killed" if force else "ACPI ignored, killed"

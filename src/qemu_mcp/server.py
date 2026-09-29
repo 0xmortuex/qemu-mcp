@@ -430,13 +430,24 @@ def qemu_list() -> str:
 
 
 @mcp.tool()
-def qemu_stop(name: str, force: bool = False) -> str:
+def qemu_stop(
+    name: str,
+    force: bool = False,
+    graceful_timeout_s: float = 10.0,
+    kill_timeout_s: float = 3.0,
+) -> str:
     """Stop a VM. Tries graceful ACPI powerdown first; force=True kills it.
 
     Guests without ACPI handling (most hobby kernels) will need force=True
-    or will be killed after the 10 s grace period anyway.
+    or will be killed after the graceful_timeout_s grace period anyway.
+    graceful_timeout_s (default 10 s) bounds how long to wait for the guest
+    to shut down after ACPI powerdown before falling back to a kill; raise
+    it for a guest that legitimately needs longer (large RAM, a slow ACPI
+    handler). kill_timeout_s (default 3 s) bounds how long to wait for the
+    QEMU process to exit after `quit`/kill before it's force-killed. Both
+    must be positive.
     """
-    outcome = vmmod.stop(name, force)
+    outcome = vmmod.stop(name, force, graceful_timeout_s, kill_timeout_s)
     return f"VM {name!r} stopped ({outcome})"
 
 

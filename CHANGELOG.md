@@ -40,6 +40,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `cpu` parameter on `qemu_boot`, to select or customize the emulated CPU
   model (`-cpu qemu64,+avx`/`max`/`host`...) instead of QEMU's per-arch
   default.
+- `graceful_timeout_s` / `kill_timeout_s` parameters on `qemu_stop`, to
+  override the previously-hardcoded ~10s ACPI-shutdown wait and 3s
+  post-`quit` process-exit wait.
 
 ### Fixed
 - `qemu_boot`'s `disk` param was hardcoded to raw format, silently

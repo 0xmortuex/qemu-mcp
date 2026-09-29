@@ -45,7 +45,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout |
 | `qemu_wait_screen` | Block until the display stops changing (for VGA-only guests with no serial output), or timeout |
 | `qemu_list` | All managed VMs with state, arch, machine, pid, uptime |
-| `qemu_stop` | Graceful ACPI powerdown, or `force=true` to kill |
+| `qemu_stop` | Graceful ACPI powerdown, or `force=true` to kill. `graceful_timeout_s`/`kill_timeout_s` override the default 10s/3s waits |
 | `qemu_qmp` | Run any raw QMP command on the VM |
 
 Multiple named VMs can run at once.
@@ -194,7 +194,7 @@ qcow2 disk image (booted as a second VM alongside the ISO one).
 
 - VMs run headless (`-display none`); screenshots still work because QEMU keeps rendering the VGA framebuffer.
 - Serial output requires the guest to write to COM1 (most hobby kernels and all Linux `console=ttyS0` setups do). Guests that only draw to VGA are still fully drivable via screenshots + keys.
-- `qemu_stop` tries ACPI powerdown first; hobby kernels usually ignore it and get killed after a grace period — use `force=true` to skip the wait.
+- `qemu_stop` tries ACPI powerdown first; hobby kernels usually ignore it and get killed after a grace period — use `force=true` to skip the wait, or raise `graceful_timeout_s` (default 10s) for a guest that legitimately needs longer to shut down cleanly.
 - This server launches QEMU processes on your machine with files you point it at. `extra_args` is passed to QEMU verbatim — same trust level as running QEMU yourself.
 
 ## Changelog
