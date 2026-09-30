@@ -78,11 +78,14 @@ was tested, what still needs a real QEMU boot) behind each entry.
   level down (e.g. a version-named folder), a common manual-extract layout.
 - Input validation added ahead of any side effects, so bad input fails
   clean instead of after a workdir/process is already created: invalid VM
-  `name`s (path separators, empty, `.`/`..`); non-positive `memory_mb`;
-  non-positive QMP/`qemu_wait_screen`/`qemu_wait_serial` timeouts and poll
-  intervals; malformed `extra_args` shell quoting; `extra_args` flags that
-  collide with flags `qemu_boot` already sets; negative `qemu_type`
-  `delay_ms`; `char_to_keys` silently accepting multi-character strings.
+  `name`s (path separators, empty, `.`/`..`); invalid `arch` values on
+  `qemu_boot`/`qemu_version` (same path-separator/empty/`.`/`..` check as
+  `name`, since `find_qemu` interpolates `arch` into a binary name looked
+  up via `shutil.which`); non-positive `memory_mb`; non-positive
+  QMP/`qemu_wait_screen`/`qemu_wait_serial` timeouts and poll intervals;
+  malformed `extra_args` shell quoting; `extra_args` flags that collide
+  with flags `qemu_boot` already sets; negative `qemu_type` `delay_ms`;
+  `char_to_keys` silently accepting multi-character strings.
 
 ### Changed
 - Migrated from `FastMCP` to the `mcp` 2.0 `MCPServer` API and dropped the

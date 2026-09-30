@@ -58,7 +58,8 @@ def qemu_boot(
     optionally with append/initrd), or disk (raw or qcow2 disk image, auto-detected;
     qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). memory_mb must
     be positive. arch picks the
-    qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...). machine is
+    qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...) and, like
+    name, must contain no "/" or "\\" and not be "." or "..". machine is
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
     have no default machine and need e.g. machine="virt". smp sets the number
     of virtual CPUs (QEMU -smp), for testing SMP-aware guest code; must be

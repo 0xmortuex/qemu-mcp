@@ -65,6 +65,11 @@ def _installed_arches() -> list[str]:
 
 
 def find_qemu(arch: str) -> str:
+    if not arch or "/" in arch or "\\" in arch or arch in (".", ".."):
+        raise ValueError(
+            f"invalid arch {arch!r}: must be non-empty with no path separators "
+            "(it's built into the qemu-system-<arch> binary name looked up on PATH)"
+        )
     exe = f"qemu-system-{arch}"
     path = shutil.which(exe)
     if path:

@@ -60,6 +60,15 @@ def test_find_qemu_finds_exact_match_on_path(tmp_path, monkeypatch):
     assert os.path.normcase(vm.find_qemu("x86_64")) == os.path.normcase(path)
 
 
+@pytest.mark.parametrize("arch", ["", "x86_64/../../evil", "x86_64\\..\\evil", ".", ".."])
+def test_find_qemu_rejects_invalid_arch(arch):
+    try:
+        vm.find_qemu(arch)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(arch) in str(e)
+
+
 def test_find_qemu_falls_back_to_flat_windows_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(vm.sys, "platform", "win32")
     monkeypatch.setenv("PATH", "")
@@ -135,6 +144,21 @@ def test_boot_rejects_invalid_names(name):
         assert False, "expected ValueError"
     except ValueError as e:
         assert repr(name) in str(e)
+
+
+@pytest.mark.parametrize("arch", ["x86_64/../../evil", "x86_64\\..\\evil", ".", ".."])
+def test_boot_rejects_invalid_arch(tmp_path, arch):
+    iso = tmp_path / "disk.iso"
+    iso.write_bytes(b"")
+    try:
+        vm.boot(
+            name="valid-name", arch=arch, memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(arch) in str(e)
 
 
 @pytest.mark.parametrize("memory_mb", [0, -1, -256])
