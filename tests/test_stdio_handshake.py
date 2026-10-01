@@ -42,7 +42,9 @@ async def test_stdio_handshake_lists_expected_tools():
 
         tools = await session.list_tools()
         names = {t.name for t in tools.tools}
-        assert EXPECTED_TOOLS <= names
+        assert names == EXPECTED_TOOLS, (
+            f"missing: {EXPECTED_TOOLS - names}, unexpected: {names - EXPECTED_TOOLS}"
+        )
 
 
 @pytest.fixture
