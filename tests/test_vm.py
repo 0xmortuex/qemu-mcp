@@ -1,11 +1,13 @@
 """Unit tests for vm.find_qemu's missing-binary error and vm.disk_format. No QEMU needed."""
 
+import json
 import os
 import shutil
 import stat
 import sys
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -1017,6 +1019,78 @@ def test_qemu_snapshot_list_reports_placeholder_on_empty_hmp_output(tmp_path):
         vm._vms.pop("snap-list-empty", None)
 
     assert out == "(no snapshot info returned)"
+
+
+class _RecordingQMP(_FakeQMP):
+    """Records the command name and kwargs it was called with, returns a fixed result."""
+
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def command(self, name, **kwargs):
+        self.calls.append((name, kwargs))
+        return self.result
+
+
+def test_qemu_qmp_returns_the_result_as_indented_json(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-qmp-ok"
+    workdir.mkdir()
+    fake = _register_fake_vm("qmp-ok", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _RecordingQMP({"status": "running", "singlestep": False})
+
+    try:
+        out = server.qemu_qmp(name="qmp-ok", command="query-status")
+    finally:
+        vm._vms.pop("qmp-ok", None)
+
+    assert json.loads(out) == {"status": "running", "singlestep": False}
+    assert fake.qmp.calls == [("query-status", {})]
+
+
+def test_qemu_qmp_passes_arguments_through_as_kwargs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-qmp-args"
+    workdir.mkdir()
+    fake = _register_fake_vm("qmp-args", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _RecordingQMP({})
+
+    try:
+        server.qemu_qmp(
+            name="qmp-args",
+            command="human-monitor-command",
+            arguments={"command-line": "info status"},
+        )
+    finally:
+        vm._vms.pop("qmp-args", None)
+
+    assert fake.qmp.calls == [
+        ("human-monitor-command", {"command-line": "info status"})
+    ]
+
+
+def test_qemu_qmp_serializes_values_json_cannot_handle_natively(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-qmp-nonserializable"
+    workdir.mkdir()
+    fake = _register_fake_vm("qmp-nonserializable", workdir)
+    fake.proc = _RunningFakeProc()
+    # A plain json.dumps(result) would raise TypeError here; qemu_qmp's
+    # default=str must fall back to stringifying it instead.
+    fake.qmp = _RecordingQMP({"id": uuid.UUID(int=0)})
+
+    try:
+        out = server.qemu_qmp(name="qmp-nonserializable", command="query-uuid")
+    finally:
+        vm._vms.pop("qmp-nonserializable", None)
+
+    assert json.loads(out) == {"id": "00000000-0000-0000-0000-000000000000"}
 
 
 def test_qemu_serial_reads_the_tail_after_the_vm_has_exited(tmp_path):
