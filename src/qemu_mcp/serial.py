@@ -10,6 +10,7 @@ guest's serial console the same way qemu_type drives the keyboard.
 from __future__ import annotations
 
 import socket
+import threading
 
 
 def chardev_args(serial_path: str, port: int) -> list[str]:
@@ -43,6 +44,7 @@ class SerialConsole:
     def __init__(self, port: int) -> None:
         self.port = port
         self._sock: socket.socket | None = None
+        self._lock = threading.Lock()
 
     def _connect(self) -> socket.socket:
         try:
@@ -54,25 +56,29 @@ class SerialConsole:
             ) from e
 
     def send(self, data: str) -> None:
-        payload = data.encode("utf-8")
-        if self._sock is None:
-            self._sock = self._connect()
-        try:
-            self._sock.sendall(payload)
-        except OSError:
-            self._sock.close()
-            self._sock = None
+        # Held for the whole connect-if-needed+write (+ reconnect-on-drop)
+        # sequence: two threads sharing one socket without this lock could
+        # interleave their writes on the wire, or race on self._sock itself.
+        with self._lock:
+            payload = data.encode("utf-8")
+            if self._sock is None:
+                self._sock = self._connect()
             try:
-                sock = self._connect()
-                sock.sendall(payload)
-            except (SerialError, OSError) as e:
-                raise SerialError(
-                    f"lost the connection to the serial console at "
-                    f"127.0.0.1:{self.port} and could not reconnect: {e}. "
-                    "The guest may be mid-reboot or its serial socket may "
-                    "have dropped - retry qemu_serial_send once it's back up."
-                ) from e
-            self._sock = sock
+                self._sock.sendall(payload)
+            except OSError:
+                self._sock.close()
+                self._sock = None
+                try:
+                    sock = self._connect()
+                    sock.sendall(payload)
+                except (SerialError, OSError) as e:
+                    raise SerialError(
+                        f"lost the connection to the serial console at "
+                        f"127.0.0.1:{self.port} and could not reconnect: {e}. "
+                        "The guest may be mid-reboot or its serial socket may "
+                        "have dropped - retry qemu_serial_send once it's back up."
+                    ) from e
+                self._sock = sock
 
     def close(self) -> None:
         if self._sock is not None:

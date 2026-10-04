@@ -6,6 +6,8 @@ QEMU's socket chardev.
 import os
 import socket
 import sys
+import threading
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -62,6 +64,57 @@ def test_send_reuses_the_same_connection():
     finally:
         console.close()
         server.close()
+
+
+class _ConcurrencyDetectingSocket:
+    """Stands in for the real serial socket and records whether two threads
+    were ever inside sendall() at the same time - the actual byte-level
+    interleaving this guards against depends on OS/network timing that's
+    unreliable to force in a test, but two threads *entering* sendall()
+    concurrently is exactly what the lock in SerialConsole.send() must
+    prevent, and that's deterministic to detect directly.
+    """
+
+    def __init__(self):
+        self._guard = threading.Lock()
+        self.active = 0
+        self.violation = False
+
+    def sendall(self, data):
+        with self._guard:
+            self.active += 1
+            if self.active > 1:
+                self.violation = True
+        time.sleep(0.05)
+        with self._guard:
+            self.active -= 1
+
+    def close(self):
+        pass
+
+
+def test_send_serializes_concurrent_calls(monkeypatch):
+    fake_sock = _ConcurrencyDetectingSocket()
+    monkeypatch.setattr(
+        "qemu_mcp.serial.socket.create_connection", lambda addr, timeout=None: fake_sock
+    )
+    console = SerialConsole(port=0)
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            console.send("x")
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert not errors
+    assert not fake_sock.violation
 
 
 class _FakeSocket:

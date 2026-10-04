@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import socket
+import threading
 import time
 from typing import Any
 
@@ -25,6 +26,7 @@ class QMPClient:
         deadline = time.monotonic() + connect_timeout
         last_err: OSError | None = None
         self.sock: socket.socket | None = None
+        self._lock = threading.Lock()
         while time.monotonic() < deadline:
             try:
                 self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
@@ -57,22 +59,26 @@ class QMPClient:
         return result
 
     def command(self, name: str, **arguments: Any) -> Any:
-        if self.sock is None:
-            raise QMPError("QMP connection is closed")
-        msg: dict[str, Any] = {"execute": name}
-        if arguments:
-            msg["arguments"] = arguments
-        try:
-            self.sock.sendall(json.dumps(msg).encode() + b"\n")
-        except OSError as e:
-            raise QMPError(f"QMP connection error: {e}") from None
-        while True:
-            resp = self._read_msg()
-            if "return" in resp:
-                return resp["return"]
-            if "error" in resp:
-                raise QMPError(f"{name}: {resp['error'].get('desc', resp['error'])}")
-            # anything else is an async event - skip it
+        # Held for the whole send+read round trip: QMP has no request-id
+        # correlation, so two threads sharing one socket without this lock
+        # can each read the other's response off the wire.
+        with self._lock:
+            if self.sock is None:
+                raise QMPError("QMP connection is closed")
+            msg: dict[str, Any] = {"execute": name}
+            if arguments:
+                msg["arguments"] = arguments
+            try:
+                self.sock.sendall(json.dumps(msg).encode() + b"\n")
+            except OSError as e:
+                raise QMPError(f"QMP connection error: {e}") from None
+            while True:
+                resp = self._read_msg()
+                if "return" in resp:
+                    return resp["return"]
+                if "error" in resp:
+                    raise QMPError(f"{name}: {resp['error'].get('desc', resp['error'])}")
+                # anything else is an async event - skip it
 
     def close(self) -> None:
         if self.sock is not None:
