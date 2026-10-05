@@ -76,6 +76,14 @@ was tested, what still needs a real QEMU boot) behind each entry.
   now retries with fresh ports on an address-already-in-use failure.
 - `find_qemu`'s Windows fallback missed QEMU installs nested one directory
   level down (e.g. a version-named folder), a common manual-extract layout.
+- `QMPClient.command()` and `SerialConsole.send()` shared one socket across
+  concurrent tool calls against the same VM with no lock; two calls could
+  cross-talk (reading each other's QMP reply) or race on the serial
+  socket's own state. Both now hold a lock for the whole round trip.
+- `qemu_wait_serial` re-read and re-decoded the entire serial log on every
+  poll; it now tracks a byte offset and only reads what's new since the
+  last poll, so a long wait against a chatty guest doesn't get slower
+  per-poll as the log grows.
 - Input validation added ahead of any side effects, so bad input fails
   clean instead of after a workdir/process is already created: invalid VM
   `name`s (path separators, empty, `.`/`..`); invalid `arch` values on

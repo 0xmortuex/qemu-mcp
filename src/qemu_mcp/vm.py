@@ -245,6 +245,24 @@ class VM:
         except OSError:
             return ""
 
+    def serial_bytes_from(self, offset: int) -> tuple[bytes, int]:
+        """Read serial.log bytes written at or after `offset`.
+
+        For a poll loop that calls this repeatedly with the offset it last
+        returned: only the bytes appended since the previous call are read
+        off disk, instead of re-reading the whole (ever-growing) file on
+        every poll. Returns (new_bytes, new_offset); new_offset == offset
+        if nothing new was available (including when the file doesn't exist
+        yet).
+        """
+        try:
+            with open(self.serial_path, "rb") as f:
+                f.seek(offset)
+                data = f.read()
+            return data, offset + len(data)
+        except OSError:
+            return b"", offset
+
 
 _vms: dict[str, VM] = {}
 # Sync tool functions (qemu_boot, qemu_stop, ...) each run on their own worker

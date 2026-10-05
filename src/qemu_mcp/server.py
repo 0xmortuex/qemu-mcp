@@ -329,7 +329,10 @@ def qemu_wait_serial(
     "kernel ready", a shell prompt) before typing or screenshotting.
     Returns the serial tail either way, prefixed FOUND or TIMEOUT. Always
     checks at least once, even if timeout_s is 0 or negative.
-    poll_interval_s (default 0.25s) must be positive.
+    poll_interval_s (default 0.25s) must be positive. Each poll reads only
+    the serial log bytes written since the previous poll, not the whole
+    file, so a long wait against a chatty guest doesn't cost ever-more I/O
+    per poll.
     """
     if poll_interval_s <= 0:
         raise ValueError(
@@ -339,8 +342,12 @@ def qemu_wait_serial(
         )
     vm = vmmod.get_vm(name)
     deadline = time.monotonic() + timeout_s
+    raw = b""
+    offset = 0
     while True:
-        out = vm.serial_text()
+        new_bytes, offset = vm.serial_bytes_from(offset)
+        raw += new_bytes
+        out = raw.decode("utf-8", errors="replace")
         if text in out:
             return "FOUND\n" + vmmod.tail(out, 20)
         if not vm.running:

@@ -1668,6 +1668,70 @@ def test_qemu_wait_serial_checks_at_least_once_even_with_non_positive_timeout(tm
         vm._vms.pop("wait-serial-zero-timeout", None)
 
 
+def test_serial_bytes_from_only_returns_bytes_appended_since_offset(tmp_path):
+    # Regression test: serial_text() re-reads the whole file from disk on
+    # every call, which qemu_wait_serial's poll loop used to call once per
+    # poll_interval_s - O(n) re-read cost per poll against an ever-growing
+    # log. serial_bytes_from(offset) should only read what's new since the
+    # last call, found via the returned offset.
+    workdir = tmp_path / "qemu-mcp-serial-bytes-from"
+    workdir.mkdir()
+    serial_log = workdir / "serial.log"
+    serial_log.write_text("boot ok\n")
+    fake = _register_fake_vm("serial-bytes-from-test", workdir)
+
+    try:
+        first, offset = fake.serial_bytes_from(0)
+        assert first == b"boot ok\n"
+        assert offset == len(b"boot ok\n")
+
+        # Nothing new written yet: a repeat call at the same offset returns
+        # no new bytes, not the whole file again.
+        empty, offset2 = fake.serial_bytes_from(offset)
+        assert empty == b""
+        assert offset2 == offset
+
+        with open(serial_log, "a") as f:
+            f.write("login:")
+        second, offset3 = fake.serial_bytes_from(offset)
+        assert second == b"login:"
+        assert offset3 == offset + len(b"login:")
+    finally:
+        vm._vms.pop("serial-bytes-from-test", None)
+
+
+def test_qemu_wait_serial_finds_text_appended_after_polling_started(tmp_path):
+    # The incremental serial_bytes_from read must still assemble the full
+    # text seen so far across polls, so a match isn't missed just because
+    # it arrived on disk after the loop's first read.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-serial-incremental"
+    workdir.mkdir()
+    serial_log = workdir / "serial.log"
+    serial_log.write_text("boot ok\n")
+    fake = _register_fake_vm("wait-serial-incremental", workdir)
+    fake.proc = _RunningFakeProc()
+
+    def append_soon():
+        time.sleep(0.2)
+        with open(serial_log, "a") as f:
+            f.write("login:")
+
+    try:
+        threading.Thread(target=append_soon, daemon=True).start()
+        result = server.qemu_wait_serial(
+            name="wait-serial-incremental",
+            text="login:",
+            timeout_s=5,
+            poll_interval_s=0.05,
+        )
+        assert result.startswith("FOUND"), result
+        assert "login:" in result
+    finally:
+        vm._vms.pop("wait-serial-incremental", None)
+
+
 def test_qemu_type_rejects_negative_delay_ms():
     # Regression test: a negative delay_ms used to reach time.sleep(delay_ms
     # / 1000) unvalidated, inside the per-character loop - so it raised a
