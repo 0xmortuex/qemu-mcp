@@ -621,6 +621,88 @@ def test_stop_passes_kill_timeout_s_to_proc_wait(tmp_path, monkeypatch):
     assert fake.proc.wait_timeouts == [7.0]
 
 
+class _RecordsCloseQMP(_FakeQMP):
+    """command() always succeeds (stands in for a working `quit`); close() is
+    observable so a test can assert *when* it happened relative to something
+    else, not just that it eventually did."""
+
+    def __init__(self):
+        self.closed = threading.Event()
+
+    def command(self, name, **kwargs):
+        return {}
+
+    def close(self):
+        self.closed.set()
+
+
+def test_stop_waits_for_in_flight_caller_before_closing_handles(tmp_path):
+    # Regression test for the race this backlog item fixed: stop() used to
+    # close qmp/serial_console and rmtree the workdir unconditionally, even
+    # while a qemu_wait_serial/qemu_wait_screen/qemu_screenshot call was
+    # still polling the same VM on another thread - that poll loop's next
+    # QMP call or file access would then hit a closed handle or a missing
+    # directory instead of the clean result it was about to return on its
+    # own. vm.in_use() marks that window; stop() must wait (at least
+    # briefly) for it to clear before touching qmp/serial_console/workdir.
+    workdir = tmp_path / "qemu-mcp-stop-waits-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("stop-waits-test", workdir)
+    fake.proc = _QuitExitsProc()
+    fake.qmp = _RecordsCloseQMP()
+
+    entered = threading.Event()
+    released = threading.Event()
+
+    def _hold():
+        with vm.in_use("stop-waits-test"):
+            entered.set()
+            released.wait(timeout=5)
+
+    holder = threading.Thread(target=_hold)
+    holder.start()
+    try:
+        assert entered.wait(timeout=5), "holder thread never entered vm.in_use()"
+
+        stop_result = {}
+
+        def _stop():
+            stop_result["outcome"] = vm.stop("stop-waits-test", force=True)
+
+        stopper = threading.Thread(target=_stop)
+        stopper.start()
+        try:
+            time.sleep(0.2)
+            assert not fake.qmp.closed.is_set(), (
+                "stop() closed qmp while an in-flight caller still held the VM"
+            )
+            assert workdir.exists(), (
+                "stop() removed the workdir while an in-flight caller still held the VM"
+            )
+        finally:
+            released.set()
+            stopper.join(timeout=5)
+
+        assert fake.qmp.closed.is_set()
+        assert stop_result.get("outcome") == "killed"
+        assert not workdir.exists()
+    finally:
+        holder.join(timeout=5)
+        vm._vms.pop("stop-waits-test", None)
+        vm._in_use.pop("stop-waits-test", None)
+
+
+def test_in_use_tracks_concurrent_holders():
+    name = "in-use-count-test"
+    assert name not in vm._in_use
+    with vm.in_use(name):
+        assert vm._in_use[name] == 1
+        with vm.in_use(name):
+            assert vm._in_use[name] == 2
+        assert vm._in_use[name] == 1
+    assert name not in vm._in_use
+
+
 class _RunningFakeProc(_FakeProc):
     def poll(self):
         return None
@@ -869,6 +951,44 @@ def test_qemu_wait_screen_reports_exited_not_settled_if_vm_exits_mid_screendump(
         assert list(workdir.glob("*.ppm")) == []
     finally:
         vm._vms.pop("wait-screen-crash-test", None)
+
+
+class _AssertsInUseQMP(_FakeQMP):
+    """screendump 'succeeds' like _ScreendumpQMP, while also recording
+    whether vm._in_use shows the caller as registered at the moment it's
+    called - proves the tool itself is wired to vm.in_use(), not just that
+    the context manager works in isolation."""
+
+    def __init__(self, vm_name, ppm_bytes):
+        self.vm_name = vm_name
+        self.ppm_bytes = ppm_bytes
+        self.observed_in_use = None
+
+    def command(self, name, **kwargs):
+        assert name == "screendump"
+        self.observed_in_use = vm._in_use.get(self.vm_name, 0)
+        with open(kwargs["filename"], "wb") as f:
+            f.write(self.ppm_bytes)
+        return {}
+
+
+def test_qemu_screenshot_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-screenshot-inuse-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("screenshot-inuse-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseQMP("screenshot-inuse-test", _ONE_PIXEL_PPM)
+
+    try:
+        server.qemu_screenshot(name="screenshot-inuse-test")
+        assert fake.qmp.observed_in_use == 1
+        assert "screenshot-inuse-test" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("screenshot-inuse-test", None)
 
 
 class _HMPQMP(_FakeQMP):

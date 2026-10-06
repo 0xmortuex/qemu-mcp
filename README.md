@@ -195,6 +195,7 @@ qcow2 disk image (booted as a second VM alongside the ISO one).
 - VMs run headless (`-display none`); screenshots still work because QEMU keeps rendering the VGA framebuffer.
 - Serial output requires the guest to write to COM1 (most hobby kernels and all Linux `console=ttyS0` setups do). Guests that only draw to VGA are still fully drivable via screenshots + keys.
 - `qemu_stop` tries ACPI powerdown first; hobby kernels usually ignore it and get killed after a grace period — use `force=true` to skip the wait, or raise `graceful_timeout_s` (default 10s) for a guest that legitimately needs longer to shut down cleanly.
+- `qemu_stop` waits briefly (up to 5s, best-effort) for any in-flight `qemu_wait_serial`/`qemu_wait_screen`/`qemu_screenshot` call against the same VM to finish before closing its QMP/serial connections and removing its temp directory, so a poll loop racing a concurrent stop sees a clean result instead of an error from a handle closed out from under it.
 - This server launches QEMU processes on your machine with files you point it at. `extra_args` is passed to QEMU verbatim — same trust level as running QEMU yourself.
 
 ## Changelog

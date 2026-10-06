@@ -94,6 +94,11 @@ was tested, what still needs a real QEMU boot) behind each entry.
   malformed `extra_args` shell quoting; `extra_args` flags that collide
   with flags `qemu_boot` already sets; negative `qemu_type` `delay_ms`;
   `char_to_keys` silently accepting multi-character strings.
+- `qemu_stop` could close a VM's QMP/serial connections and remove its temp
+  directory while a concurrent `qemu_wait_serial`/`qemu_wait_screen`/
+  `qemu_screenshot` call was still polling it, surfacing a confusing error
+  instead of that call's own clean result; `qemu_stop` now waits briefly
+  for any such in-flight call to finish first.
 
 ### Changed
 - Migrated from `FastMCP` to the `mcp` 2.0 `MCPServer` API and dropped the

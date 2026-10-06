@@ -130,27 +130,35 @@ def qemu_screenshot(name: str) -> Image:
     from PIL import Image as PILImage
 
     vm = vmmod.get_vm(name)
-    fd, ppm = tempfile.mkstemp(suffix=".ppm", dir=vm.workdir)
-    os.close(fd)
-    try:
-        vm.qmp.command("screendump", filename=ppm)
-        # QMP returns before the file write is guaranteed visible; poll briefly.
-        for _ in range(20):
-            if os.path.getsize(ppm) > 0:
-                break
-            time.sleep(0.05)
-        else:
-            if not vm.running:
-                raise RuntimeError(
-                    f"VM {name!r} exited while taking a screenshot "
-                    f"(code {vm.proc.returncode})"
-                )
-        with PILImage.open(ppm) as im:
-            buf = io.BytesIO()
-            im.save(buf, format="PNG")
-        return Image(data=buf.getvalue(), format="png")
-    finally:
-        os.remove(ppm)
+    with vmmod.in_use(name):
+        fd, ppm = tempfile.mkstemp(suffix=".ppm", dir=vm.workdir)
+        os.close(fd)
+        try:
+            vm.qmp.command("screendump", filename=ppm)
+            # QMP returns before the file write is guaranteed visible; poll briefly.
+            for _ in range(20):
+                if os.path.getsize(ppm) > 0:
+                    break
+                time.sleep(0.05)
+            else:
+                if not vm.running:
+                    raise RuntimeError(
+                        f"VM {name!r} exited while taking a screenshot "
+                        f"(code {vm.proc.returncode})"
+                    )
+            with PILImage.open(ppm) as im:
+                buf = io.BytesIO()
+                im.save(buf, format="PNG")
+            return Image(data=buf.getvalue(), format="png")
+        finally:
+            # Normally still there - vmmod.in_use above makes qemu_stop wait
+            # for this block to finish before it rmtree's the workdir - but
+            # that wait is best-effort/bounded, so tolerate it already being
+            # gone rather than masking the real result with a FileNotFoundError.
+            try:
+                os.remove(ppm)
+            except OSError:
+                pass
 
 
 @mcp.tool()
@@ -341,20 +349,21 @@ def qemu_wait_serial(
             "would busy-loop serial reads against the VM)"
         )
     vm = vmmod.get_vm(name)
-    deadline = time.monotonic() + timeout_s
-    raw = b""
-    offset = 0
-    while True:
-        new_bytes, offset = vm.serial_bytes_from(offset)
-        raw += new_bytes
-        out = raw.decode("utf-8", errors="replace")
-        if text in out:
-            return "FOUND\n" + vmmod.tail(out, 20)
-        if not vm.running:
-            return "VM EXITED\n" + vmmod.tail(out, 20)
-        if time.monotonic() >= deadline:
-            return "TIMEOUT\n" + vmmod.tail(out, 20)
-        time.sleep(poll_interval_s)
+    with vmmod.in_use(name):
+        deadline = time.monotonic() + timeout_s
+        raw = b""
+        offset = 0
+        while True:
+            new_bytes, offset = vm.serial_bytes_from(offset)
+            raw += new_bytes
+            out = raw.decode("utf-8", errors="replace")
+            if text in out:
+                return "FOUND\n" + vmmod.tail(out, 20)
+            if not vm.running:
+                return "VM EXITED\n" + vmmod.tail(out, 20)
+            if time.monotonic() >= deadline:
+                return "TIMEOUT\n" + vmmod.tail(out, 20)
+            time.sleep(poll_interval_s)
 
 
 @mcp.tool()
@@ -379,27 +388,34 @@ def qemu_wait_screen(
         )
     tracker = screenmod.StabilityTracker(stable_polls)
     vm = vmmod.get_vm(name)
-    fd, ppm = tempfile.mkstemp(suffix=".ppm", dir=vm.workdir)
-    os.close(fd)
-    try:
-        deadline = time.monotonic() + timeout_s
-        polls = 0
-        while True:
-            vm.qmp.command("screendump", filename=ppm)
-            for _ in range(20):
-                if os.path.getsize(ppm) > 0:
-                    break
-                time.sleep(0.05)
-            polls += 1
-            if not vm.running:
-                return f"VM EXITED after {polls} polls"
-            if tracker.update(screenmod.hash_file(ppm)):
-                return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
-            if time.monotonic() >= deadline:
-                return f"TIMEOUT after {timeout_s}s ({polls} polls)"
-            time.sleep(poll_interval_s)
-    finally:
-        os.remove(ppm)
+    with vmmod.in_use(name):
+        fd, ppm = tempfile.mkstemp(suffix=".ppm", dir=vm.workdir)
+        os.close(fd)
+        try:
+            deadline = time.monotonic() + timeout_s
+            polls = 0
+            while True:
+                vm.qmp.command("screendump", filename=ppm)
+                for _ in range(20):
+                    if os.path.getsize(ppm) > 0:
+                        break
+                    time.sleep(0.05)
+                polls += 1
+                if not vm.running:
+                    return f"VM EXITED after {polls} polls"
+                if tracker.update(screenmod.hash_file(ppm)):
+                    return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
+                if time.monotonic() >= deadline:
+                    return f"TIMEOUT after {timeout_s}s ({polls} polls)"
+                time.sleep(poll_interval_s)
+        finally:
+            # See qemu_screenshot's matching comment: vmmod.in_use makes
+            # qemu_stop wait for this loop to exit before rmtree'ing the
+            # workdir, but that wait is best-effort/bounded.
+            try:
+                os.remove(ppm)
+            except OSError:
+                pass
 
 
 @mcp.tool()
