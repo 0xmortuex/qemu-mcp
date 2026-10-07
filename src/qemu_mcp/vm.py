@@ -25,7 +25,7 @@ _WINDOWS_QEMU_DIRS = [
 
 
 def _windows_search_dirs() -> list[str]:
-    """QEMU_DIR/_WINDOWS_QEMU_DIRS, plus one level of their subdirectories.
+    r"""QEMU_DIR/_WINDOWS_QEMU_DIRS, plus one level of their subdirectories.
 
     Covers both a flat install (`...\qemu\qemu-system-x86_64.exe`) and one
     nested a version folder deeper (`...\qemu\qemu-8.2.0\qemu-system-x86_64.exe`),

@@ -99,6 +99,8 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `qemu_screenshot` call was still polling it, surfacing a confusing error
   instead of that call's own clean result; `qemu_stop` now waits briefly
   for any such in-flight call to finish first.
+- `vm.py` raised a `DeprecationWarning: invalid escape sequence '\q'` on
+  every import, from an unescaped `\q` in a non-raw docstring.
 
 ### Changed
 - Migrated from `FastMCP` to the `mcp` 2.0 `MCPServer` API and dropped the
