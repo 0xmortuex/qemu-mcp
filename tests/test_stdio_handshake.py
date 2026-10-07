@@ -50,3 +50,20 @@ async def test_stdio_handshake_lists_expected_tools():
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_instructive_errors_reach_the_agent():
+    """MCPServer hides any exception that isn't a ToolError behind a generic
+    "Error executing tool X" - so the guidance in our errors ("no VM named",
+    "Found on this system: ...") must be converted to survive the trip."""
+    params = StdioServerParameters(command=sys.executable, args=["-m", "qemu_mcp"])
+    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+        await session.initialize()
+
+        result = await session.call_tool("qemu_stop", {"name": "nope"})
+        assert result.is_error
+        assert result.content[0].text.endswith("no VM named 'nope'")
+
+        result = await session.call_tool("qemu_boot", {"name": "a/b", "kernel": "x"})
+        assert result.is_error and "invalid VM name 'a/b'" in result.content[0].text

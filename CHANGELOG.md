@@ -45,6 +45,12 @@ was tested, what still needs a real QEMU boot) behind each entry.
   post-`quit` process-exit wait.
 
 ### Fixed
+- Tool errors now reach the agent. mcp 2's `MCPServer` replaces any exception
+  that isn't a `ToolError` with a bare "Error executing tool X", so every
+  instructive message (`no VM named ...`, `VM has exited. Last serial output: ...`,
+  `qemu-system-foo not found. Found on this system: ...`) was invisible to the
+  agent. Expected failures are now re-raised as `ToolError` at the tool boundary;
+  a new stdio test asserts the text arrives.
 - `qemu_boot`'s `disk` param was hardcoded to raw format, silently
   corrupting qcow2 disks passed to it; format is now auto-detected.
 - VM temp workdirs (serial log, screendump/snapshot scratch files) leaked

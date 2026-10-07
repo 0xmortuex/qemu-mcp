@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import os
 import tempfile
 import time
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from . import keys as keymod
 from . import mouse as mousemod
 from . import screen as screenmod
 from . import snapshot as snapmod
 from . import vm as vmmod
+from .serial import SerialError
 
 mcp = MCPServer(
     "qemu",
@@ -30,8 +34,31 @@ mcp = MCPServer(
     ),
 )
 
+F = TypeVar("F", bound=Callable[..., Any])
 
-@mcp.tool()
+# Failures an agent can act on ("no VM named X", "VM has exited. Last serial
+# output: ...", "qemu-system-foo not found. Found on this system: ..."). The
+# MCP server only forwards a ToolError's message to the client - anything
+# else arrives as a bare "Error executing tool X" - so these are re-raised as
+# ToolError with their text intact. QMPError is a RuntimeError.
+_EXPECTED = (KeyError, ValueError, FileNotFoundError, RuntimeError, SerialError, OSError)
+
+
+def tool(fn: F) -> F:
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return fn(*args, **kwargs)
+        except _EXPECTED as e:
+            # KeyError's str() wraps the message in quotes; use the raw text.
+            msg = e.args[0] if isinstance(e, KeyError) and e.args else str(e)
+            raise ToolError(str(msg)) from e
+
+    mcp.tool()(wrapper)
+    return fn
+
+
+@tool
 def qemu_boot(
     name: str,
     iso: str | None = None,
@@ -117,7 +144,7 @@ def qemu_boot(
     )
 
 
-@mcp.tool()
+@tool
 def qemu_screenshot(name: str) -> Image:
     """Capture the VM's display as a PNG image.
 
@@ -161,7 +188,7 @@ def qemu_screenshot(name: str) -> Image:
                 pass
 
 
-@mcp.tool()
+@tool
 def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
     """Type text into the guest as keyboard input. "\\n" presses Enter.
 
@@ -182,7 +209,7 @@ def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
     return f"typed {len(text)} characters into {name!r}"
 
 
-@mcp.tool()
+@tool
 def qemu_key(name: str, combo: str) -> str:
     """Press a key or chord: "enter", "esc", "f12", "ctrl-alt-f2", "ctrl-c"...
 
@@ -196,7 +223,7 @@ def qemu_key(name: str, combo: str) -> str:
     return f"pressed {combo} in {name!r}"
 
 
-@mcp.tool()
+@tool
 def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
     """Move the absolute pointer and optionally click.
 
@@ -230,7 +257,7 @@ def _hmp_result(success_message: str, output: Any) -> str:
     return success_message
 
 
-@mcp.tool()
+@tool
 def qemu_snapshot_save(name: str, tag: str) -> str:
     """Save a full VM snapshot (RAM + device state) under `tag`.
 
@@ -246,7 +273,7 @@ def qemu_snapshot_save(name: str, tag: str) -> str:
     return _hmp_result(f"saved snapshot {tag!r} for VM {name!r}", output)
 
 
-@mcp.tool()
+@tool
 def qemu_snapshot_load(name: str, tag: str) -> str:
     """Restore a VM to a snapshot previously saved with qemu_snapshot_save.
 
@@ -259,7 +286,7 @@ def qemu_snapshot_load(name: str, tag: str) -> str:
     return _hmp_result(f"loaded snapshot {tag!r} for VM {name!r}", output)
 
 
-@mcp.tool()
+@tool
 def qemu_snapshot_delete(name: str, tag: str) -> str:
     """Delete a snapshot previously saved with qemu_snapshot_save.
 
@@ -273,7 +300,7 @@ def qemu_snapshot_delete(name: str, tag: str) -> str:
     return _hmp_result(f"deleted snapshot {tag!r} for VM {name!r}", output)
 
 
-@mcp.tool()
+@tool
 def qemu_snapshot_list(name: str) -> str:
     """List internal snapshots saved on the VM's qcow2 disk.
 
@@ -290,7 +317,7 @@ def qemu_snapshot_list(name: str) -> str:
     return text if text else "(no snapshot info returned)"
 
 
-@mcp.tool()
+@tool
 def qemu_serial(name: str, tail_lines: int = 50) -> str:
     """Read the tail of the VM's serial console output (COM1).
 
@@ -309,7 +336,7 @@ def qemu_serial(name: str, tail_lines: int = 50) -> str:
     return note + vmmod.tail(text, tail_lines)
 
 
-@mcp.tool()
+@tool
 def qemu_serial_send(name: str, text: str) -> str:
     """Write text to the guest's serial console (COM1).
 
@@ -327,7 +354,7 @@ def qemu_serial_send(name: str, text: str) -> str:
     return f"sent {len(text)} bytes to {name!r}'s serial console"
 
 
-@mcp.tool()
+@tool
 def qemu_wait_serial(
     name: str, text: str, timeout_s: int = 30, poll_interval_s: float = 0.25
 ) -> str:
@@ -366,7 +393,7 @@ def qemu_wait_serial(
             time.sleep(poll_interval_s)
 
 
-@mcp.tool()
+@tool
 def qemu_wait_screen(
     name: str, timeout_s: int = 30, poll_interval_s: float = 1.0, stable_polls: int = 3
 ) -> str:
@@ -418,7 +445,7 @@ def qemu_wait_screen(
                 pass
 
 
-@mcp.tool()
+@tool
 def qemu_version(arch: str = "x86_64") -> str:
     """Report `qemu-system-<arch> --version`'s own output, without booting a VM.
 
@@ -429,7 +456,7 @@ def qemu_version(arch: str = "x86_64") -> str:
     return vmmod.version(arch)
 
 
-@mcp.tool()
+@tool
 def qemu_list() -> str:
     """List all VMs managed by this server, with arch, machine, pid, uptime, and state.
 
@@ -453,7 +480,7 @@ def qemu_list() -> str:
     return "\n".join(rows)
 
 
-@mcp.tool()
+@tool
 def qemu_stop(
     name: str,
     force: bool = False,
@@ -475,7 +502,7 @@ def qemu_stop(
     return f"VM {name!r} stopped ({outcome})"
 
 
-@mcp.tool()
+@tool
 def qemu_qmp(name: str, command: str, arguments: dict[str, Any] | None = None) -> str:
     """Escape hatch: run a raw QMP command on the VM.
 
