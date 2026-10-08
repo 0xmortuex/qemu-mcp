@@ -49,6 +49,10 @@ class QMPClient:
                 chunk = self.sock.recv(65536)
             except TimeoutError:
                 raise QMPError("QMP read timed out - QEMU stopped responding") from None
+            except (ConnectionResetError, ConnectionAbortedError) as e:
+                # Windows reports QEMU closing its end as an abort/reset
+                # (WinError 10053/10054) rather than a clean EOF.
+                raise QMPError(f"QMP connection closed by QEMU ({e})") from None
             except OSError as e:
                 raise QMPError(f"QMP connection error: {e}") from None
             if not chunk:

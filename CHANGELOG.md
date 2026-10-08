@@ -45,6 +45,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   post-`quit` process-exit wait.
 
 ### Fixed
+- On Windows, QEMU closing its QMP socket surfaced as `QMP connection error: [WinError
+  10053] ...` instead of `QMP connection closed by QEMU`; connection aborts/resets are
+  now reported as a close on every OS. Two tests were also made OS-independent (a TCP
+  read that assumed both sends arrive together; a serial log written in text mode).
 - Tool errors now reach the agent. mcp 2's `MCPServer` replaces any exception
   that isn't a `ToolError` with a bare "Error executing tool X", so every
   instructive message (`no VM named ...`, `VM has exited. Last serial output: ...`,

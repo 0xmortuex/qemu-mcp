@@ -59,7 +59,13 @@ def test_send_reuses_the_same_connection():
         first_sock = console._sock
         console.send("b")
         assert console._sock is first_sock
-        assert conn.recv(1024) == b"ab"
+        # TCP may deliver the two sends separately; read until both arrive.
+        got = b""
+        while len(got) < 2:
+            chunk = conn.recv(1024)
+            assert chunk, f"connection closed after {got!r}"
+            got += chunk
+        assert got == b"ab"
         conn.close()
     finally:
         console.close()

@@ -1797,7 +1797,8 @@ def test_serial_bytes_from_only_returns_bytes_appended_since_offset(tmp_path):
     workdir = tmp_path / "qemu-mcp-serial-bytes-from"
     workdir.mkdir()
     serial_log = workdir / "serial.log"
-    serial_log.write_text("boot ok\n")
+    # QEMU writes the serial log as raw bytes; write_text would add \r on Windows.
+    serial_log.write_bytes(b"boot ok\n")
     fake = _register_fake_vm("serial-bytes-from-test", workdir)
 
     try:
