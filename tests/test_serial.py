@@ -157,6 +157,33 @@ def test_close_is_safe_to_call_twice_and_before_any_send():
     console.close()
 
 
+def test_close_waits_for_an_in_progress_send_before_closing():
+    # close() must share send()'s lock: vm.stop() calls serial_console.close()
+    # without waiting for a concurrent qemu_serial_send call the way it waits
+    # for qemu_wait_serial/qemu_wait_screen/qemu_screenshot (those mark
+    # themselves in_use(), qemu_serial_send doesn't) - so a close() that
+    # doesn't itself coordinate with send() could null out self._sock
+    # mid-call, turning a clean SerialError into a raw AttributeError.
+    # Simulating an in-progress send by holding the lock directly (rather
+    # than racing a real blocked socket write) is deterministic, matching
+    # test_send_serializes_concurrent_calls above.
+    console = SerialConsole(0)
+    console._sock = socket.socket()
+    closed = threading.Event()
+
+    console._lock.acquire()
+    try:
+        t = threading.Thread(target=lambda: (console.close(), closed.set()))
+        t.start()
+        t.join(timeout=0.3)
+        assert not closed.is_set(), "close() must block while a send is in flight"
+    finally:
+        console._lock.release()
+    t.join(timeout=2)
+    assert closed.is_set()
+    assert console._sock is None
+
+
 def test_send_raises_serial_error_when_the_initial_connect_fails():
     # Port 0 with no listener: connect() fails immediately.
     server, port = _listen()

@@ -81,6 +81,16 @@ class SerialConsole:
                 self._sock = sock
 
     def close(self) -> None:
-        if self._sock is not None:
-            self._sock.close()
-            self._sock = None
+        # Held for the same reason send() holds it: without this, close()
+        # racing a concurrent send() (e.g. qemu_stop vs. a qemu_serial_send
+        # call in flight - the one qemu_* tool that doesn't mark itself
+        # in_use()) could null out self._sock between send()'s own "is it
+        # None" check and its next use of it, raising a raw AttributeError
+        # instead of a clean error.
+        with self._lock:
+            if self._sock is not None:
+                try:
+                    self._sock.close()
+                except OSError:
+                    pass
+                self._sock = None

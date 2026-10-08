@@ -81,9 +81,16 @@ class QMPClient:
                 # anything else is an async event - skip it
 
     def close(self) -> None:
-        if self.sock is not None:
-            try:
-                self.sock.close()
-            except OSError:
-                pass
-            self.sock = None
+        # Held for the same reason command() holds it: without this, close()
+        # racing a concurrent command() (e.g. qemu_stop vs. a qemu_qmp call
+        # in flight - the one qemu_* tool that doesn't mark itself in_use())
+        # could null out self.sock between command()'s own "is it None" check
+        # and its next use of it, raising a raw AttributeError instead of the
+        # clean QMPError command() already raises for a closed connection.
+        with self._lock:
+            if self.sock is not None:
+                try:
+                    self.sock.close()
+                except OSError:
+                    pass
+                self.sock = None

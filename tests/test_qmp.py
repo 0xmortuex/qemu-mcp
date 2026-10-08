@@ -161,3 +161,31 @@ def test_read_msg_raises_qmp_error_when_connection_is_closed_by_peer():
             client.command("query-status")
     finally:
         server.close()
+
+
+def test_close_waits_for_an_in_progress_command_before_closing():
+    # close() must share command()'s lock: vm.stop() calls qmp.close()
+    # without waiting for a concurrent qemu_qmp call the way it waits for
+    # qemu_wait_serial/qemu_wait_screen/qemu_screenshot (those mark
+    # themselves in_use(), qemu_qmp doesn't) - so a close() that doesn't
+    # itself coordinate with command() could null out self.sock mid-call,
+    # turning a clean QMPError into a raw AttributeError. Simulating an
+    # in-progress command by holding the lock directly (rather than racing
+    # a real blocked socket read, which is inherently timing-dependent) is
+    # the same deterministic approach test_serial.py's concurrency tests use.
+    client = QMPClient.__new__(QMPClient)
+    client.sock = socket.socket()
+    client._lock = threading.Lock()
+    closed = threading.Event()
+
+    client._lock.acquire()
+    try:
+        t = threading.Thread(target=lambda: (client.close(), closed.set()))
+        t.start()
+        t.join(timeout=0.3)
+        assert not closed.is_set(), "close() must block while a command is in flight"
+    finally:
+        client._lock.release()
+    t.join(timeout=2)
+    assert closed.is_set()
+    assert client.sock is None
