@@ -199,8 +199,10 @@ def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
     if delay_ms < 0:
         raise ValueError(f"invalid delay_ms {delay_ms!r}: must be non-negative")
     vm = vmmod.get_vm(name)
-    for ch in text:
-        qcodes = keymod.char_to_keys(ch)
+    # Translate everything first: failing on character 7 after sending 6
+    # would leave a half-typed command in the guest.
+    keystrokes = [keymod.char_to_keys(ch) for ch in text]
+    for qcodes in keystrokes:
         vm.qmp.command(
             "send-key",
             keys=[{"type": "qcode", "data": q} for q in qcodes],
@@ -356,12 +358,18 @@ def qemu_serial_send(name: str, text: str) -> str:
 
 @tool
 def qemu_wait_serial(
-    name: str, text: str, timeout_s: int = 30, poll_interval_s: float = 0.25
+    name: str, text: str, timeout_s: int = 30, poll_interval_s: float = 0.25,
+    from_start: bool = False,
 ) -> str:
     """Block until `text` appears on the serial console, or time out.
 
     The reliable way to know a guest reached a boot stage ("login:",
     "kernel ready", a shell prompt) before typing or screenshotting.
+    Each wait searches only output after the previous successful wait's
+    match, so waiting for "$ " after typing a command finds the NEW prompt,
+    not the one already on screen. The first wait searches from the start
+    of the log (so a marker printed before the call is still found);
+    from_start=True searches the whole log again.
     Returns the serial tail either way, prefixed FOUND or TIMEOUT. Always
     checks at least once, even if timeout_s is 0 or negative.
     poll_interval_s (default 0.25s) must be positive. Each poll reads only
@@ -379,12 +387,16 @@ def qemu_wait_serial(
     with vmmod.in_use(name):
         deadline = time.monotonic() + timeout_s
         raw = b""
-        offset = 0
+        start = 0 if from_start else vm.serial_mark
+        offset = start
+        needle = text.encode("utf-8")
         while True:
             new_bytes, offset = vm.serial_bytes_from(offset)
             raw += new_bytes
             out = raw.decode("utf-8", errors="replace")
-            if text in out:
+            hit = raw.find(needle)
+            if hit >= 0:
+                vm.serial_mark = start + hit + len(needle)
                 return "FOUND\n" + vmmod.tail(out, 20)
             if not vm.running:
                 return "VM EXITED\n" + vmmod.tail(out, 20)
@@ -395,12 +407,17 @@ def qemu_wait_serial(
 
 @tool
 def qemu_wait_screen(
-    name: str, timeout_s: int = 30, poll_interval_s: float = 1.0, stable_polls: int = 3
+    name: str, timeout_s: int = 30, poll_interval_s: float = 1.0, stable_polls: int = 3,
+    max_changed_pixels: int = 64,
 ) -> str:
     """Block until the VM's display stops changing, or time out.
 
     Polls screendumps every poll_interval_s and waits for `stable_polls`
-    consecutive identical frames - the reliable way to know a VGA-only
+    consecutive frames that each differ from the previous one by at most
+    max_changed_pixels pixels (default 64: a blinking text-mode cursor flips
+    about 18, so identical frames never happen on a text console, while boot
+    output changes hundreds; use 0 to require identical frames) - the
+    reliable way to know a VGA-only
     guest (no serial output) has finished a BIOS splash or boot animation
     before you screenshot or type. For guests with serial output, prefer
     qemu_wait_serial - it doesn't need a fixed number of polls to decide.
@@ -413,7 +430,7 @@ def qemu_wait_screen(
             "(time.sleep rejects a negative value with a raw ValueError, and 0 "
             "would busy-loop screendump calls against the VM)"
         )
-    tracker = screenmod.StabilityTracker(stable_polls)
+    tracker = screenmod.StabilityTracker(stable_polls, max_changed_pixels)
     vm = vmmod.get_vm(name)
     with vmmod.in_use(name):
         fd, ppm = tempfile.mkstemp(suffix=".ppm", dir=vm.workdir)
@@ -430,10 +447,13 @@ def qemu_wait_screen(
                 polls += 1
                 if not vm.running:
                     return f"VM EXITED after {polls} polls"
-                if tracker.update(screenmod.hash_file(ppm)):
-                    return f"SETTLED after {polls} polls ({stable_polls} identical frames)"
+                if tracker.update(screenmod.load_frame(ppm)):
+                    return (f"SETTLED after {polls} polls ({stable_polls} frames in a row with "
+                            f"<= {max_changed_pixels} changed pixels; last change: "
+                            f"{tracker.last_changed} px)")
                 if time.monotonic() >= deadline:
-                    return f"TIMEOUT after {timeout_s}s ({polls} polls)"
+                    return (f"TIMEOUT after {timeout_s}s ({polls} polls; last change: "
+                            f"{tracker.last_changed} px, threshold {max_changed_pixels})")
                 time.sleep(poll_interval_s)
         finally:
             # See qemu_screenshot's matching comment: vmmod.in_use makes

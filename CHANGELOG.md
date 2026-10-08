@@ -44,7 +44,18 @@ was tested, what still needs a real QEMU boot) behind each entry.
   override the previously-hardcoded ~10s ACPI-shutdown wait and 3s
   post-`quit` process-exit wait.
 
+### Changed
+- `qemu_wait_serial` now searches only output after the previous successful wait's match
+  (per VM), so waiting for a prompt after typing a command finds the new prompt instead
+  of returning instantly on the old one. The first wait still searches from the start of
+  the log; `from_start=True` restores the whole-log search.
+- `qemu_wait_screen` settles when consecutive frames differ by at most
+  `max_changed_pixels` (default 64) instead of requiring byte-identical frames: a
+  blinking text-mode cursor flips ~18 pixels forever, so text consoles never settled.
+
 ### Fixed
+- `qemu_type` translated characters while sending, so an untypeable character left a
+  partial string in the guest; the whole string is now validated first.
 - On Windows, QEMU closing its QMP socket surfaced as `QMP connection error: [WinError
   10053] ...` instead of `QMP connection closed by QEMU`; connection aborts/resets are
   now reported as a close on every OS. Two tests were also made OS-independent (a TCP

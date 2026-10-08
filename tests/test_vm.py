@@ -1778,8 +1778,12 @@ def test_qemu_wait_serial_checks_at_least_once_even_with_non_positive_timeout(tm
 
     try:
         for bad in (0, -1):
+            # from_start: the same marker is looked for twice, and a plain
+            # second wait would (correctly) only search output after the
+            # first match.
             result = server.qemu_wait_serial(
-                name="wait-serial-zero-timeout", text="login:", timeout_s=bad
+                name="wait-serial-zero-timeout", text="login:", timeout_s=bad,
+                from_start=True,
             )
             assert result.startswith("FOUND"), (
                 f"timeout_s={bad!r} must still check once before timing out"
@@ -1965,3 +1969,51 @@ def test_boot_rejects_a_concurrent_boot_of_the_same_name(tmp_path, monkeypatch):
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+def test_wait_serial_only_sees_output_after_the_last_match(tmp_path):
+    """A second wait for the same marker used to match the old occurrence
+    instantly; it must wait for a new one."""
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-mark"
+    workdir.mkdir()
+    log = workdir / "serial.log"
+    log.write_bytes(b"boot\n> ")
+    fake = _register_fake_vm("wait-mark", workdir)
+    fake.proc.returncode = None  # "running", so the loop keeps polling
+    try:
+        assert server.qemu_wait_serial("wait-mark", "> ", timeout_s=0).startswith("FOUND")
+        assert server.qemu_wait_serial(
+            "wait-mark", "> ", timeout_s=0, poll_interval_s=0.01).startswith("TIMEOUT")
+        with open(log, "ab") as f:
+            f.write(b"ok\n> ")
+        assert server.qemu_wait_serial("wait-mark", "> ", timeout_s=0).startswith("FOUND")
+        assert server.qemu_wait_serial(
+            "wait-mark", "boot", timeout_s=0, from_start=True).startswith("FOUND")
+    finally:
+        vm._vms.pop("wait-mark", None)
+
+
+def test_type_sends_nothing_when_any_character_is_untypeable(tmp_path):
+    from qemu_mcp import server
+
+    sent = []
+
+    class RecordingQMP(_FakeQMP):
+        def command(self, name, **kwargs):
+            sent.append((name, kwargs))
+
+    workdir = tmp_path / "qemu-mcp-type-atomic"
+    workdir.mkdir()
+    fake = _register_fake_vm("type-atomic", workdir)
+    fake.proc.returncode = None  # "running"
+    fake.qmp = RecordingQMP()
+    try:
+        with pytest.raises(ValueError, match="cannot type"):
+            server.qemu_type("type-atomic", "echo hé", delay_ms=0)
+        assert sent == [], "a partial string was typed before the bad character"
+        server.qemu_type("type-atomic", "ok", delay_ms=0)
+        assert len(sent) == 2
+    finally:
+        vm._vms.pop("type-atomic", None)

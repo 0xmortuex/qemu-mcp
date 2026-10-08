@@ -241,6 +241,9 @@ class VM:
     arch: str
     machine: str | None = None
     started_at: float = field(default_factory=time.monotonic)
+    # Serial-log byte offset just past the last qemu_wait_serial match, so
+    # the next wait only sees new output (e.g. the prompt after a command).
+    serial_mark: int = 0
 
     @property
     def running(self) -> bool:

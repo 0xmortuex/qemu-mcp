@@ -42,8 +42,8 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_snapshot_list` | List snapshot tags saved on the VM's qcow2 disk (raw `info snapshots` output), so you can see what's available before loading or deleting one |
 | `qemu_serial` | Tail the serial console (COM1) output — works after the VM has exited too, to see what it printed right before dying |
 | `qemu_serial_send` | Write text to the serial console (COM1) |
-| `qemu_wait_serial` | Block until given text appears on serial, or timeout |
-| `qemu_wait_screen` | Block until the display stops changing (for VGA-only guests with no serial output), or timeout |
+| `qemu_wait_serial` | Block until given text appears on serial, or timeout. Each wait only searches output after the previous match, so waiting for a prompt after a command finds the new one (`from_start=True` searches the whole log) |
+| `qemu_wait_screen` | Block until the display stops changing (for VGA-only guests with no serial output), or timeout. A blinking text cursor counts as settled (`max_changed_pixels`, default 64) |
 | `qemu_list` | All managed VMs with state, arch, machine, pid, uptime |
 | `qemu_stop` | Graceful ACPI powerdown, or `force=true` to kill. `graceful_timeout_s`/`kill_timeout_s` override the default 10s/3s waits |
 | `qemu_qmp` | Run any raw QMP command on the VM |
