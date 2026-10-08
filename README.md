@@ -160,6 +160,22 @@ qemu_boot(name="k", kernel="build/kernel.elf", accel="kvm", cpu="host")  # pass 
 Check `qemu-system-<arch> -cpu help` for the full list of models/features an
 arch supports.
 
+## Debugging the kernel
+
+qemu-mcp lets an agent *see* a crash. To find out *why* it happened, pair it with
+[gdbstub-mcp](https://github.com/0xmortuex/gdbstub-mcp). Boot with QEMU's gdbstub on
+and an interrupt log:
+
+```python
+qemu_boot(name="k", kernel="build/kernel.elf",
+          extra_args="-s -S -d int,cpu_reset -D int.log -no-reboot")
+```
+
+Then the agent can `debug_connect` with the kernel ELF, set breakpoints on symbols
+or `file.c:line`, read registers and memory, and get backtraces. If the VM triple
+faults, `debug_explain_fault` turns `int.log` into the exception chain and its root
+cause. No gdb binary is needed.
+
 ## Tests
 
 [![CI](https://github.com/0xmortuex/qemu-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmortuex/qemu-mcp/actions/workflows/ci.yml)
