@@ -1760,6 +1760,20 @@ def test_qemu_wait_serial_rejects_non_positive_poll_interval():
             assert "poll_interval_s" in str(e)
 
 
+def test_qemu_wait_serial_rejects_empty_text():
+    # bytes.find(b"") always returns 0, so an empty needle used to make
+    # qemu_wait_serial report FOUND on its very first poll regardless of
+    # what (if anything) the VM had actually printed. No VM needs to be
+    # registered: the check fires before vmmod.get_vm, same as poll_interval_s.
+    from qemu_mcp import server
+
+    try:
+        server.qemu_wait_serial(name="no-such-vm", text="")
+        assert False, "expected ValueError for empty text"
+    except ValueError as e:
+        assert "text" in str(e)
+
+
 def test_qemu_wait_serial_checks_at_least_once_even_with_non_positive_timeout(tmp_path):
     # Regression test: `while time.monotonic() < deadline` is already false
     # for timeout_s<=0 before the loop ever runs once, so a marker that had

@@ -122,6 +122,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   for any such in-flight call to finish first.
 - `vm.py` raised a `DeprecationWarning: invalid escape sequence '\q'` on
   every import, from an unescaped `\q` in a non-raw docstring.
+- `qemu_wait_serial(text="")` reported `FOUND` on its very first poll
+  regardless of the VM's actual serial output, since an empty search
+  string always matches at position 0; `text` is now required to be
+  non-empty.
 
 ### Changed
 - Migrated from `FastMCP` to the `mcp` 2.0 `MCPServer` API and dropped the

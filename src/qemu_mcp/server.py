@@ -375,8 +375,10 @@ def qemu_wait_serial(
     poll_interval_s (default 0.25s) must be positive. Each poll reads only
     the serial log bytes written since the previous poll, not the whole
     file, so a long wait against a chatty guest doesn't cost ever-more I/O
-    per poll.
+    per poll. text must be non-empty.
     """
+    if not text:
+        raise ValueError("invalid text '': must be non-empty (an empty needle always matches)")
     if poll_interval_s <= 0:
         raise ValueError(
             f"invalid poll_interval_s {poll_interval_s!r}: must be positive "
