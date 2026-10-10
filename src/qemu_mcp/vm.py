@@ -100,9 +100,12 @@ def version(arch: str) -> str:
     qemu_boot call.
     """
     qemu = find_qemu(arch)
-    result = subprocess.run(
-        [qemu, "--version"], capture_output=True, text=True, timeout=10, check=False
-    )
+    try:
+        result = subprocess.run(
+            [qemu, "--version"], capture_output=True, text=True, timeout=10, check=False
+        )
+    except subprocess.SubprocessError as e:
+        raise RuntimeError(f"running '{qemu} --version' failed: {e}") from e
     return (result.stdout or result.stderr).strip()
 
 

@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -116,6 +117,18 @@ def test_version_returns_qemu_version_output(tmp_path, monkeypatch):
 def test_version_raises_when_binary_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path))
     with pytest.raises(FileNotFoundError):
+        vm.version("x86_64")
+
+
+def test_version_wraps_a_timeout_as_runtime_error(tmp_path, monkeypatch):
+    _make_fake_binary(tmp_path, "qemu-system-x86_64")
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    def _timing_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 10))
+
+    monkeypatch.setattr(vm.subprocess, "run", _timing_out)
+    with pytest.raises(RuntimeError, match="--version"):
         vm.version("x86_64")
 
 
