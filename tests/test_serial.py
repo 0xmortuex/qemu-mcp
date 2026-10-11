@@ -127,6 +127,7 @@ class _FakeSocket:
     def __init__(self, fail):
         self.fail = fail
         self.sent = b""
+        self.closed = False
 
     def sendall(self, data):
         if self.fail:
@@ -134,7 +135,7 @@ class _FakeSocket:
         self.sent += data
 
     def close(self):
-        pass
+        self.closed = True
 
 
 def test_send_reconnects_after_the_peer_drops_the_connection(monkeypatch):
@@ -219,6 +220,33 @@ def test_send_raises_serial_error_when_reconnect_after_a_drop_also_fails(monkeyp
         console.send("first")
 
     assert len(calls) == 2
+    assert console._sock is None
+
+
+def test_send_closes_the_reconnected_socket_when_the_resend_also_fails(monkeypatch):
+    # Distinct from test_send_raises_serial_error_when_reconnect_after_a_drop_also_fails
+    # above: there, create_connection() itself raises, so there's no socket to
+    # leak. Here the reconnect succeeds (a real new socket is opened) but the
+    # immediate resend on it fails too - the scenario the backlog's leak note
+    # described: the new socket must be closed before send() raises, not left
+    # for the garbage collector.
+    sockets = [_FakeSocket(fail=True), _FakeSocket(fail=True)]
+    made = []
+
+    def fake_create_connection(addr, timeout=None):
+        made.append(addr)
+        return sockets[len(made) - 1]
+
+    monkeypatch.setattr(
+        "qemu_mcp.serial.socket.create_connection", fake_create_connection
+    )
+
+    console = SerialConsole(9999)
+    with pytest.raises(SerialError, match="lost the connection"):
+        console.send("first")
+
+    assert len(made) == 2
+    assert sockets[1].closed, "the reconnected socket must be closed on a failed resend"
     assert console._sock is None
 
 

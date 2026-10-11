@@ -70,7 +70,11 @@ class SerialConsole:
                 self._sock = None
                 try:
                     sock = self._connect()
-                    sock.sendall(payload)
+                    try:
+                        sock.sendall(payload)
+                    except OSError:
+                        sock.close()
+                        raise
                 except (SerialError, OSError) as e:
                     raise SerialError(
                         f"lost the connection to the serial console at "
