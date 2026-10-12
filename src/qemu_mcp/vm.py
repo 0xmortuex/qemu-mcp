@@ -573,6 +573,7 @@ def stop(
                 vm.proc.wait(timeout=kill_timeout_s)
             except subprocess.TimeoutExpired:
                 vm.proc.kill()
+                vm.proc.wait()
             outcome = "killed" if force else "ACPI ignored, killed"
     # By now the VM is no longer running (or never was), so any in-flight
     # qemu_wait_serial/qemu_wait_screen/qemu_screenshot poll loop against it

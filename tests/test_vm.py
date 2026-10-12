@@ -634,6 +634,48 @@ def test_stop_passes_kill_timeout_s_to_proc_wait(tmp_path, monkeypatch):
     assert fake.proc.wait_timeouts == [7.0]
 
 
+class _TimesOutThenKillProc(_FakeProc):
+    """wait(timeout=...) times out while running, same as a guest that ignores
+    `quit`; kill() then stops it. Records whether something reaped the process
+    with a follow-up wait() after kill(), instead of leaving a zombie behind -
+    same shape as vm.boot()'s QMP-never-connects branch, which already does
+    this (proc.kill() followed by proc.wait())."""
+
+    def __init__(self):
+        self._running = True
+        self.wait_after_kill_called = False
+
+    def poll(self):
+        return None if self._running else 0
+
+    def wait(self, timeout=None):
+        if self._running:
+            raise subprocess.TimeoutExpired(cmd="qemu-system-x86_64", timeout=timeout)
+        self.wait_after_kill_called = True
+        return 0
+
+    def kill(self):
+        self._running = False
+
+
+def test_stop_reaps_the_process_after_a_kill_timeout(tmp_path, monkeypatch):
+    workdir = tmp_path / "qemu-mcp-kill-reap-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("kill-reap-test", workdir)
+    fake.proc = _TimesOutThenKillProc()
+    fake.qmp = _PowerdownFailsQMP()  # force=True path, skips straight to quit/kill
+
+    monkeypatch.setattr(vm.time, "sleep", lambda s: None)
+
+    try:
+        outcome = vm.stop("kill-reap-test", force=False, kill_timeout_s=1.0)
+    finally:
+        vm._vms.pop("kill-reap-test", None)
+
+    assert outcome == "killed"
+    assert fake.proc.wait_after_kill_called
+
+
 class _RecordsCloseQMP(_FakeQMP):
     """command() always succeeds (stands in for a working `quit`); close() is
     observable so a test can assert *when* it happened relative to something
