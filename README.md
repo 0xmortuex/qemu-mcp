@@ -50,6 +50,14 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 
 Multiple named VMs can run at once.
 
+Every tool declares all four MCP behaviour hints, so your client knows which calls to
+confirm with you. Only the waiting and reading tools (`qemu_screenshot`, `qemu_serial`,
+`qemu_wait_serial`, `qemu_wait_screen`, `qemu_snapshot_list`, `qemu_version`) are
+read-only. `qemu_boot` and `qemu_list` are marked destructive because they clean up VMs
+that exited on their own, deleting their serial logs; read a crashed guest's output with
+`qemu_serial` first. `qemu_boot` and `qemu_qmp` are open-world: `extra_args` and raw QMP
+can reach anything QEMU can.
+
 ## Install
 
 Requirements: Python 3.10+, and [QEMU](https://www.qemu.org/download/) on your PATH (on Windows, `C:\Program Files\qemu` is found automatically, or set `QEMU_DIR`).

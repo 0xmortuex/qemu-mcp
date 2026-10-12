@@ -13,6 +13,7 @@ from typing import Any, TypeVar
 
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from . import keys as keymod
 from . import mouse as mousemod
@@ -44,21 +45,37 @@ F = TypeVar("F", bound=Callable[..., Any])
 _EXPECTED = (KeyError, ValueError, FileNotFoundError, RuntimeError, SerialError, OSError)
 
 
-def tool(fn: F) -> F:
-    @functools.wraps(fn)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        try:
-            return fn(*args, **kwargs)
-        except _EXPECTED as e:
-            # KeyError's str() wraps the message in quotes; use the raw text.
-            msg = e.args[0] if isinstance(e, KeyError) and e.args else str(e)
-            raise ToolError(str(msg)) from e
+def tool(*, read_only: bool, destructive: bool, idempotent: bool,
+         open_world: bool) -> Callable[[F], F]:
+    """Register fn as an MCP tool with all four behaviour hints stated.
 
-    mcp.tool()(wrapper)
-    return fn
+    The hints are required so no tool can be added without saying what it
+    does to the world: clients use them to decide when to ask the user
+    first. tests/test_tool_hints.py pins every tool's values.
+    """
+    annotations = ToolAnnotations(read_only_hint=read_only, destructive_hint=destructive,
+                                  idempotent_hint=idempotent, open_world_hint=open_world)
+
+    def register(fn: F) -> F:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return fn(*args, **kwargs)
+            except _EXPECTED as e:
+                # KeyError's str() wraps the message in quotes; use the raw text.
+                msg = e.args[0] if isinstance(e, KeyError) and e.args else str(e)
+                raise ToolError(str(msg)) from e
+
+        mcp.tool(annotations=annotations)(wrapper)
+        return fn
+
+    return register
 
 
-@tool
+# Destructive: boot() reaps VMs that already exited, deleting their workdir,
+# serial log included. Open world: extra_args can attach anything QEMU can
+# reach, and QEMU's default user-mode NIC gives the guest the network.
+@tool(read_only=False, destructive=True, idempotent=False, open_world=True)
 def qemu_boot(
     name: str,
     iso: str | None = None,
@@ -144,7 +161,7 @@ def qemu_boot(
     )
 
 
-@tool
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
 def qemu_screenshot(name: str) -> Image:
     """Capture the VM's display as a PNG image.
 
@@ -188,7 +205,8 @@ def qemu_screenshot(name: str) -> Image:
                 pass
 
 
-@tool
+# Keystrokes can do anything the guest allows, including deleting its files.
+@tool(read_only=False, destructive=True, idempotent=False, open_world=False)
 def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
     """Type text into the guest as keyboard input. "\\n" presses Enter.
 
@@ -211,7 +229,7 @@ def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
     return f"typed {len(text)} characters into {name!r}"
 
 
-@tool
+@tool(read_only=False, destructive=True, idempotent=False, open_world=False)
 def qemu_key(name: str, combo: str) -> str:
     """Press a key or chord: "enter", "esc", "f12", "ctrl-alt-f2", "ctrl-c"...
 
@@ -225,7 +243,7 @@ def qemu_key(name: str, combo: str) -> str:
     return f"pressed {combo} in {name!r}"
 
 
-@tool
+@tool(read_only=False, destructive=True, idempotent=False, open_world=False)
 def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
     """Move the absolute pointer and optionally click.
 
@@ -259,7 +277,8 @@ def _hmp_result(success_message: str, output: Any) -> str:
     return success_message
 
 
-@tool
+# Saving again under an existing tag overwrites that snapshot.
+@tool(read_only=False, destructive=True, idempotent=False, open_world=False)
 def qemu_snapshot_save(name: str, tag: str) -> str:
     """Save a full VM snapshot (RAM + device state) under `tag`.
 
@@ -275,7 +294,9 @@ def qemu_snapshot_save(name: str, tag: str) -> str:
     return _hmp_result(f"saved snapshot {tag!r} for VM {name!r}", output)
 
 
-@tool
+# Discards the VM's current state. Loading the same tag twice ends in the
+# same state, so it's idempotent.
+@tool(read_only=False, destructive=True, idempotent=True, open_world=False)
 def qemu_snapshot_load(name: str, tag: str) -> str:
     """Restore a VM to a snapshot previously saved with qemu_snapshot_save.
 
@@ -288,7 +309,7 @@ def qemu_snapshot_load(name: str, tag: str) -> str:
     return _hmp_result(f"loaded snapshot {tag!r} for VM {name!r}", output)
 
 
-@tool
+@tool(read_only=False, destructive=True, idempotent=True, open_world=False)
 def qemu_snapshot_delete(name: str, tag: str) -> str:
     """Delete a snapshot previously saved with qemu_snapshot_save.
 
@@ -302,7 +323,7 @@ def qemu_snapshot_delete(name: str, tag: str) -> str:
     return _hmp_result(f"deleted snapshot {tag!r} for VM {name!r}", output)
 
 
-@tool
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
 def qemu_snapshot_list(name: str) -> str:
     """List internal snapshots saved on the VM's qcow2 disk.
 
@@ -319,7 +340,7 @@ def qemu_snapshot_list(name: str) -> str:
     return text if text else "(no snapshot info returned)"
 
 
-@tool
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
 def qemu_serial(name: str, tail_lines: int = 50) -> str:
     """Read the tail of the VM's serial console output (COM1).
 
@@ -338,7 +359,7 @@ def qemu_serial(name: str, tail_lines: int = 50) -> str:
     return note + vmmod.tail(text, tail_lines)
 
 
-@tool
+@tool(read_only=False, destructive=True, idempotent=False, open_world=False)
 def qemu_serial_send(name: str, text: str) -> str:
     """Write text to the guest's serial console (COM1).
 
@@ -356,7 +377,9 @@ def qemu_serial_send(name: str, text: str) -> str:
     return f"sent {len(text)} bytes to {name!r}'s serial console"
 
 
-@tool
+# Doesn't touch the VM, but advances this server's serial mark: the same
+# call made twice waits for a new occurrence, so not idempotent.
+@tool(read_only=True, destructive=False, idempotent=False, open_world=False)
 def qemu_wait_serial(
     name: str, text: str, timeout_s: int = 30, poll_interval_s: float = 0.25,
     from_start: bool = False,
@@ -407,7 +430,7 @@ def qemu_wait_serial(
             time.sleep(poll_interval_s)
 
 
-@tool
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
 def qemu_wait_screen(
     name: str, timeout_s: int = 30, poll_interval_s: float = 1.0, stable_polls: int = 3,
     max_changed_pixels: int = 64,
@@ -467,7 +490,7 @@ def qemu_wait_screen(
                 pass
 
 
-@tool
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
 def qemu_version(arch: str = "x86_64") -> str:
     """Report `qemu-system-<arch> --version`'s own output, without booting a VM.
 
@@ -478,7 +501,9 @@ def qemu_version(arch: str = "x86_64") -> str:
     return vmmod.version(arch)
 
 
-@tool
+# Not read-only: it reaps VMs that exited on their own, deleting their
+# workdir and serial log (see qemu_serial).
+@tool(read_only=False, destructive=True, idempotent=True, open_world=False)
 def qemu_list() -> str:
     """List all VMs managed by this server, with arch, machine, pid, uptime, and state.
 
@@ -502,7 +527,8 @@ def qemu_list() -> str:
     return "\n".join(rows)
 
 
-@tool
+# Idempotent in MCP's sense: a second stop changes nothing (it errors).
+@tool(read_only=False, destructive=True, idempotent=True, open_world=False)
 def qemu_stop(
     name: str,
     force: bool = False,
@@ -524,7 +550,8 @@ def qemu_stop(
     return f"VM {name!r} stopped ({outcome})"
 
 
-@tool
+# Raw QMP can do anything QEMU can, including reaching other hosts.
+@tool(read_only=False, destructive=True, idempotent=False, open_world=True)
 def qemu_qmp(name: str, command: str, arguments: dict[str, Any] | None = None) -> str:
     """Escape hatch: run a raw QMP command on the VM.
 

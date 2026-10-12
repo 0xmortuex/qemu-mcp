@@ -43,6 +43,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `graceful_timeout_s` / `kill_timeout_s` parameters on `qemu_stop`, to
   override the previously-hardcoded ~10s ACPI-shutdown wait and 3s
   post-`quit` process-exit wait.
+- MCP tool annotations on every tool: `readOnlyHint`, `destructiveHint`,
+  `idempotentHint` and `openWorldHint`, all stated explicitly, so clients
+  can tell which calls to confirm with the user. `tests/test_tool_hints.py`
+  pins every value.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match
