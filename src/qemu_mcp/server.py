@@ -373,7 +373,8 @@ def qemu_serial_send(name: str, text: str) -> str:
     - retry the call once the guest's serial socket is back up.
     """
     vm = vmmod.get_vm(name)
-    vm.serial_console.send(text)
+    with vmmod.in_use(name):
+        vm.serial_console.send(text)
     return f"sent {len(text)} bytes to {name!r}'s serial console"
 
 
@@ -559,7 +560,8 @@ def qemu_qmp(name: str, command: str, arguments: dict[str, Any] | None = None) -
     QMP reference for commands and their arguments.
     """
     vm = vmmod.get_vm(name)
-    result = vm.qmp.command(command, **(arguments or {}))
+    with vmmod.in_use(name):
+        result = vm.qmp.command(command, **(arguments or {}))
     return json.dumps(result, indent=2, default=str)
 
 

@@ -1046,6 +1046,87 @@ def test_qemu_screenshot_marks_the_vm_in_use_while_it_runs(tmp_path):
         vm._vms.pop("screenshot-inuse-test", None)
 
 
+class _AssertsInUseSerial:
+    """send() 'succeeds' while recording whether vm._in_use shows the caller
+    as registered at the moment it's called - same proof-of-wiring shape as
+    _AssertsInUseQMP above, for qemu_serial_send's serial_console.send()."""
+
+    def __init__(self, vm_name):
+        self.vm_name = vm_name
+        self.observed_in_use = None
+        self.sent = None
+
+    def send(self, text):
+        self.observed_in_use = vm._in_use.get(self.vm_name, 0)
+        self.sent = text
+
+    def close(self):
+        pass
+
+
+def test_qemu_serial_send_marks_the_vm_in_use_while_it_runs(tmp_path):
+    # Regression test: qemu_serial_send didn't hold vm.in_use() while writing,
+    # so a qemu_stop racing a concurrent qemu_serial_send could close the
+    # serial connection out from under it instead of waiting, same class of
+    # bug already fixed for qemu_wait_serial/qemu_wait_screen/qemu_screenshot.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-serialsend-inuse-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("serialsend-inuse-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.serial_console = _AssertsInUseSerial("serialsend-inuse-test")
+
+    try:
+        server.qemu_serial_send(name="serialsend-inuse-test", text="hello\n")
+        assert fake.serial_console.observed_in_use == 1
+        assert fake.serial_console.sent == "hello\n"
+        assert "serialsend-inuse-test" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("serialsend-inuse-test", None)
+
+
+class _AssertsInUseRawQMP(_FakeQMP):
+    """command() 'succeeds' while recording whether vm._in_use shows the
+    caller as registered at the moment it's called - same proof-of-wiring
+    shape as _AssertsInUseQMP above, for the raw qemu_qmp escape hatch."""
+
+    def __init__(self, vm_name):
+        self.vm_name = vm_name
+        self.observed_in_use = None
+
+    def command(self, name, **kwargs):
+        self.observed_in_use = vm._in_use.get(self.vm_name, 0)
+        return {"name": name, "kwargs": kwargs}
+
+
+def test_qemu_qmp_marks_the_vm_in_use_while_it_runs(tmp_path):
+    # Regression test: qemu_qmp (the raw escape hatch) didn't hold
+    # vm.in_use() while its command was in flight, so a qemu_stop racing a
+    # concurrent qemu_qmp call could close the QMP connection out from under
+    # it instead of waiting - same gap test_qemu_serial_send_marks_the_vm_in_use_while_it_runs
+    # just fixed for qemu_serial_send.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-qmp-inuse-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("qmp-inuse-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseRawQMP("qmp-inuse-test")
+
+    try:
+        result = server.qemu_qmp(name="qmp-inuse-test", command="query-status")
+        assert fake.qmp.observed_in_use == 1
+        assert "qmp-inuse-test" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+        assert "query-status" in result
+    finally:
+        vm._vms.pop("qmp-inuse-test", None)
+
+
 class _HMPQMP(_FakeQMP):
     """human-monitor-command returns whatever text the fake HMP command prints."""
 
