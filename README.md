@@ -194,14 +194,16 @@ serial chardev args and reconnect logic in `serial.py`, the framebuffer
 stability tracker in `screen.py`, the snapshot tag validation and HMP
 command-line building in `snapshot.py`, the QMP client's error handling in
 `qmp.py`, the missing-binary error path, the `__version__`/`pyproject.toml`
-version-drift guard in `test_version.py`, and an MCP stdio handshake smoke
-test all need no QEMU install - this is what CI runs on every push:
+version-drift guard in `test_version.py`, the pinned tool behaviour hints
+(readOnlyHint/destructiveHint/idempotentHint/openWorldHint) in
+`test_tool_hints.py`, and an MCP stdio handshake smoke test all need no QEMU
+install - this is what CI runs on every push:
 
 ```bash
 pip install -e ".[test]"
 ruff check src tests
 mypy --strict src
-pytest tests/test_keys.py tests/test_mouse.py tests/test_screen.py tests/test_snapshot.py tests/test_serial.py tests/test_qmp.py tests/test_vm.py tests/test_stdio_handshake.py tests/test_version.py
+pytest tests/test_keys.py tests/test_mouse.py tests/test_screen.py tests/test_snapshot.py tests/test_serial.py tests/test_qmp.py tests/test_vm.py tests/test_stdio_handshake.py tests/test_tool_hints.py tests/test_version.py
 ```
 
 There's also an end-to-end test that boots a real ISO and exercises every tool:
