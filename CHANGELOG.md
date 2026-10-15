@@ -139,3 +139,5 @@ was tested, what still needs a real QEMU boot) behind each entry.
   Dependabot watching both the `pip` and `github-actions` ecosystems.
 - Added a PyPI trusted-publishing (OIDC) release workflow and verified
   `python -m build`/`twine check` output; the package is not yet published.
+- Added a `py.typed` marker (PEP 561) so type checkers recognize that
+  `qemu_mcp` ships inline types, instead of treating it as untyped.
