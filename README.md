@@ -228,6 +228,11 @@ qcow2 disk image (booted as a second VM alongside the ISO one).
 
 See [CHANGELOG.md](CHANGELOG.md).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the exact local setup and checks
+CI runs.
+
 ## License
 
 MIT
