@@ -100,7 +100,12 @@ def qemu_boot(
     temp directory and is passed to QEMU's -name flag).
     Provide at least one of: iso (bootable CD image), kernel (multiboot/bzImage,
     optionally with append/initrd), or disk (raw or qcow2 disk image, auto-detected;
-    qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). memory_mb must
+    qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). Each of iso,
+    kernel, initrd, and disk, if given, must already exist on disk - qemu_boot
+    checks with a clear FileNotFoundError naming the param and path before any
+    QEMU process starts, rather than letting a typo surface later as an opaque
+    "QEMU exited immediately" failure; qemu_boot never creates a disk image for
+    you, so disk must point at an existing image file. memory_mb must
     be positive. arch picks the
     qemu-system-<arch> binary (x86_64, i386, aarch64, riscv64...) and, like
     name, must contain no "/" or "\\" and not be "." or "..". machine is

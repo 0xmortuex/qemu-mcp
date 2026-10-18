@@ -176,6 +176,74 @@ def test_boot_rejects_invalid_arch(tmp_path, arch):
         assert repr(arch) in str(e)
 
 
+def test_boot_rejects_when_nothing_to_boot():
+    # Regression test: vm.boot() already rejected this (iso/kernel/disk all
+    # unset) before find_qemu/mkdtemp ever ran, but nothing locked the
+    # behavior in - a future refactor of the iso-or-kernel-or-disk check
+    # could silently regress it to a confusing "QEMU exited immediately"
+    # failure instead of this clear pre-flight error.
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso=None, kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "nothing to boot" in str(e)
+
+
+@pytest.mark.parametrize("label", ["iso", "kernel", "initrd", "disk"])
+def test_boot_rejects_a_missing_file_param(tmp_path, label):
+    # Regression test: vm.boot() already checked os.path.isfile for each of
+    # iso/kernel/initrd/disk before find_qemu/mkdtemp ever ran, surfacing a
+    # clear FileNotFoundError naming the param and path instead of the
+    # opaque "QEMU exited immediately" failure a bad path would otherwise
+    # hit - but nothing tested it directly, so a future refactor could
+    # silently drop the check. initrd is only validated when a sibling
+    # param (kernel) is also given, since it's meaningless alone.
+    missing = str(tmp_path / "does-not-exist")
+    kwargs = {
+        "name": "valid-name", "arch": "x86_64", "memory_mb": 64,
+        "iso": None, "kernel": None, "append": None, "initrd": None,
+        "disk": None, "extra_args": None,
+    }
+    kwargs[label] = missing
+    if label == "initrd":
+        # initrd is only checked alongside a real kernel - a bare initrd
+        # with nothing else to boot from hits the earlier "nothing to
+        # boot" check instead, and kernel is checked before initrd in
+        # vm.boot()'s own loop, so kernel must point at a real file here
+        # or its own (earlier-checked) FileNotFoundError would fire first.
+        real_kernel = tmp_path / "kernel.elf"
+        real_kernel.write_bytes(b"")
+        kwargs["kernel"] = str(real_kernel)
+    try:
+        vm.boot(**kwargs)
+        assert False, "expected FileNotFoundError"
+    except FileNotFoundError as e:
+        assert label in str(e)
+        assert missing in str(e)
+
+
+@pytest.mark.parametrize("label", ["iso", "kernel", "disk"])
+def test_boot_does_not_create_workdir_for_a_missing_file_param(tmp_path, monkeypatch, label):
+    created = _track_mkdtemp(monkeypatch)
+    missing = str(tmp_path / "does-not-exist")
+    kwargs = {
+        "name": "valid-name", "arch": "x86_64", "memory_mb": 64,
+        "iso": None, "kernel": None, "append": None, "initrd": None,
+        "disk": None, "extra_args": None,
+    }
+    kwargs[label] = missing
+    try:
+        vm.boot(**kwargs)
+        assert False, "expected FileNotFoundError"
+    except FileNotFoundError:
+        pass
+    assert created == []
+
+
 @pytest.mark.parametrize("memory_mb", [0, -1, -256])
 def test_boot_rejects_non_positive_memory_mb(memory_mb):
     try:
