@@ -86,11 +86,14 @@ class SerialConsole:
 
     def close(self) -> None:
         # Held for the same reason send() holds it: without this, close()
-        # racing a concurrent send() (e.g. qemu_stop vs. a qemu_serial_send
-        # call in flight - the one qemu_* tool that doesn't mark itself
-        # in_use()) could null out self._sock between send()'s own "is it
-        # None" check and its next use of it, raising a raw AttributeError
-        # instead of a clean error.
+        # racing a concurrent send() could null out self._sock between
+        # send()'s own "is it None" check and its next use of it, raising a
+        # raw AttributeError instead of a clean error. qemu_serial_send now
+        # holds vmmod.in_use() for its call, and stop() waits (briefly,
+        # best-effort/bounded) for that to clear before reaching this - but
+        # reap_dead() (called from qemu_list/boot() for a VM that already
+        # exited on its own) closes handles with no such wait at all, so the
+        # race this lock guards against is still very much live on that path.
         with self._lock:
             if self._sock is not None:
                 try:
