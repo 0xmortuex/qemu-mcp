@@ -293,13 +293,35 @@ _vms_lock = threading.Lock()
 # whichever QEMU process lost.
 _booting: set[str] = set()
 # Per-name count of in-flight long-running callers (qemu_wait_serial,
-# qemu_wait_screen, qemu_screenshot) currently polling a VM's qmp/
-# serial_console/workdir. stop() waits (briefly) for this to drop to zero
-# before closing those handles and removing the workdir, so a poll loop
-# racing a concurrent qemu_stop sees a clean "VM EXITED"/timeout result
-# instead of an error or a missing-file surprise from a handle that was
-# closed out from under it.
+# qemu_wait_screen, qemu_screenshot, qemu_qmp, qemu_serial_send) currently
+# using a VM's qmp/serial_console/workdir. stop() and reap_dead() each wait
+# (briefly, via _wait_until_not_in_use) for this to drop to zero before
+# closing those handles and removing the workdir, so a caller racing a
+# concurrent qemu_stop or a VM that exited on its own sees a clean
+# "VM EXITED"/timeout/QMPError result instead of a missing-file surprise
+# from a handle that was closed out from under it.
 _in_use: dict[str, int] = {}
+
+
+def _wait_until_not_in_use(name: str) -> None:
+    """Best-effort/bounded wait for a name's _in_use count to hit zero.
+
+    Shared by stop() and reap_dead(): both close a VM's qmp/serial_console
+    and remove its workdir, and both want to give an in-flight
+    qemu_wait_serial/qemu_wait_screen/qemu_screenshot/qemu_qmp/
+    qemu_serial_send caller a chance to notice the VM is gone on its own
+    next poll/call first, rather than racing its handles out from under it.
+    Not a guarantee - a caller parked on a poll_interval_s longer than
+    _STOP_IN_USE_WAIT_S can still lose the race - but it narrows the window
+    the same way in both places instead of only in one.
+    """
+    deadline = time.monotonic() + _STOP_IN_USE_WAIT_S
+    while True:
+        with _vms_lock:
+            busy = _in_use.get(name, 0) > 0
+        if not busy or time.monotonic() >= deadline:
+            return
+        time.sleep(_STOP_IN_USE_POLL_S)
 
 
 @contextmanager
@@ -361,11 +383,19 @@ def reap_dead() -> list[str]:
     without this its qmp/serial_console handles and workdir leak until
     someone notices and stops it explicitly. Called opportunistically from
     boot() and qemu_list so dead entries get cleaned up on their own.
+
+    Waits (briefly, best-effort/bounded - same as stop()) for each dead
+    name's _in_use count to clear before closing its handles, so a
+    qemu_qmp/qemu_serial_send/poll-loop caller that's still mid-flight
+    against a VM that just exited on its own gets a clean error from its
+    own next read/write instead of a raw AttributeError from a handle
+    closed out from under it.
     """
     with _vms_lock:
         dead = [name for name, vm in _vms.items() if not vm.running]
-        stale_vms = [_vms.pop(name) for name in dead]
-    for stale in stale_vms:
+        stale_vms = [(name, _vms.pop(name)) for name in dead]
+    for name, stale in stale_vms:
+        _wait_until_not_in_use(name)
         stale.qmp.close()
         stale.serial_console.close()
         shutil.rmtree(stale.workdir, ignore_errors=True)
@@ -576,19 +606,13 @@ def stop(
                 vm.proc.wait()
             outcome = "killed" if force else "ACPI ignored, killed"
     # By now the VM is no longer running (or never was), so any in-flight
-    # qemu_wait_serial/qemu_wait_screen/qemu_screenshot poll loop against it
-    # should notice on its own very next poll and return cleanly. Wait
-    # briefly for that before closing qmp/serial_console or removing
-    # workdir out from under it - best-effort and bounded, not a guarantee,
-    # since a caller could in principle be parked on a poll_interval_s
-    # longer than this wait.
-    deadline = time.monotonic() + _STOP_IN_USE_WAIT_S
-    while True:
-        with _vms_lock:
-            busy = _in_use.get(name, 0) > 0
-        if not busy or time.monotonic() >= deadline:
-            break
-        time.sleep(_STOP_IN_USE_POLL_S)
+    # qemu_wait_serial/qemu_wait_screen/qemu_screenshot/qemu_qmp/
+    # qemu_serial_send call against it should notice on its own very next
+    # poll/read/write and return cleanly. Wait briefly for that before
+    # closing qmp/serial_console or removing workdir out from under it -
+    # see _wait_until_not_in_use's own docstring for why this is
+    # best-effort/bounded, not a guarantee.
+    _wait_until_not_in_use(name)
     vm.qmp.close()
     vm.serial_console.close()
     with _vms_lock:

@@ -855,6 +855,61 @@ def test_reap_dead_removes_exited_vms_and_keeps_running_ones(tmp_path):
             shutil.rmtree(still_alive.workdir, ignore_errors=True)
 
 
+def test_reap_dead_waits_for_in_flight_caller_before_closing_handles(tmp_path):
+    # Regression test for the race noted as a follow-up to the stop()-waits
+    # fix above: reap_dead() (called from qemu_list and the top of boot())
+    # used to close qmp/serial_console and rmtree a dead VM's workdir with
+    # no wait on vm.in_use() at all, unlike stop(). A qemu_qmp/
+    # qemu_serial_send/poll-loop caller still mid-flight against a VM that
+    # exited on its own (closed handles, missing workdir) could then hit a
+    # closed handle instead of the clean error it would otherwise get.
+    workdir = tmp_path / "qemu-mcp-reap-waits-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("reap-waits-test", workdir)
+    fake.qmp = _RecordsCloseQMP()
+
+    entered = threading.Event()
+    released = threading.Event()
+
+    def _hold():
+        with vm.in_use("reap-waits-test"):
+            entered.set()
+            released.wait(timeout=5)
+
+    holder = threading.Thread(target=_hold)
+    holder.start()
+    try:
+        assert entered.wait(timeout=5), "holder thread never entered vm.in_use()"
+
+        reap_result = {}
+
+        def _reap():
+            reap_result["reaped"] = vm.reap_dead()
+
+        reaper = threading.Thread(target=_reap)
+        reaper.start()
+        try:
+            time.sleep(0.2)
+            assert not fake.qmp.closed.is_set(), (
+                "reap_dead() closed qmp while an in-flight caller still held the VM"
+            )
+            assert workdir.exists(), (
+                "reap_dead() removed the workdir while an in-flight caller "
+                "still held the VM"
+            )
+        finally:
+            released.set()
+            reaper.join(timeout=5)
+
+        assert fake.qmp.closed.is_set()
+        assert reap_result.get("reaped") == ["reap-waits-test"]
+        assert not workdir.exists()
+    finally:
+        holder.join(timeout=5)
+        vm._vms.pop("reap-waits-test", None)
+        vm._in_use.pop("reap-waits-test", None)
+
+
 def test_qemu_list_reports_arch_and_machine(tmp_path):
     from qemu_mcp import server
 

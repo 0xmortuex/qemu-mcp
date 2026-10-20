@@ -89,12 +89,11 @@ class QMPClient:
         # racing a concurrent command() could null out self.sock between
         # command()'s own "is it None" check and its next use of it, raising
         # a raw AttributeError instead of the clean QMPError command() already
-        # raises for a closed connection. qemu_qmp now holds vmmod.in_use()
-        # for its call, and stop() waits (briefly, best-effort/bounded) for
-        # that to clear before reaching this - but reap_dead() (called from
-        # qemu_list/boot() for a VM that already exited on its own) closes
-        # handles with no such wait at all, so the race this lock guards
-        # against is still very much live on that path.
+        # raises for a closed connection. qemu_qmp holds vmmod.in_use() for
+        # its call, and both stop() and reap_dead() (the latter called from
+        # qemu_list/boot() for a VM that already exited on its own) wait
+        # briefly, best-effort/bounded, for that to clear before reaching
+        # this.
         with self._lock:
             if self.sock is not None:
                 try:
