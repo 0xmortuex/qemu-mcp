@@ -66,7 +66,15 @@ class SerialConsole:
             try:
                 self._sock.sendall(payload)
             except OSError:
-                self._sock.close()
+                # close() on a socket whose peer just reset the connection can
+                # itself raise OSError (same reason close() below wraps it) -
+                # letting that escape here would skip self._sock = None and
+                # leave the next send() retrying sendall() on this same dead
+                # socket instead of reconnecting.
+                try:
+                    self._sock.close()
+                except OSError:
+                    pass
                 self._sock = None
                 try:
                     sock = self._connect()

@@ -124,8 +124,9 @@ def test_send_serializes_concurrent_calls(monkeypatch):
 
 
 class _FakeSocket:
-    def __init__(self, fail):
+    def __init__(self, fail, close_fails=False):
         self.fail = fail
+        self.close_fails = close_fails
         self.sent = b""
         self.closed = False
 
@@ -136,6 +137,8 @@ class _FakeSocket:
 
     def close(self):
         self.closed = True
+        if self.close_fails:
+            raise OSError("Connection reset by peer")
 
 
 def test_send_reconnects_after_the_peer_drops_the_connection(monkeypatch):
@@ -272,3 +275,29 @@ def test_send_recovers_on_a_later_call_after_a_failed_reconnect(monkeypatch):
     console.send("second")  # fresh connect succeeds this time (sockets[2])
     assert console._sock is sockets[2]
     assert sockets[2].sent == b"second"
+
+
+def test_send_recovers_even_when_closing_the_dead_socket_itself_raises(monkeypatch):
+    # The dead socket's own close() can raise OSError too (e.g. the peer's
+    # reset is still pending when we close our end) - that must not escape
+    # send() uncaught, and must not skip clearing self._sock, or the next
+    # send() would retry sendall() on this same dead socket instead of
+    # reconnecting.
+    sockets = [_FakeSocket(fail=True, close_fails=True), _FakeSocket(fail=False)]
+    made = []
+
+    def fake_create_connection(addr, timeout=None):
+        made.append(addr)
+        return sockets[len(made) - 1]
+
+    monkeypatch.setattr(
+        "qemu_mcp.serial.socket.create_connection", fake_create_connection
+    )
+
+    console = SerialConsole(9999)
+    console.send("hello")  # sockets[0].sendall + close() both raise, reconnects anyway
+
+    assert len(made) == 2
+    assert sockets[0].closed
+    assert console._sock is sockets[1]
+    assert sockets[1].sent == b"hello"
