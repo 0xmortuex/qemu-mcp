@@ -56,6 +56,15 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `qemu_wait_screen` settles when consecutive frames differ by at most
   `max_changed_pixels` (default 64) instead of requiring byte-identical frames: a
   blinking text-mode cursor flips ~18 pixels forever, so text consoles never settled.
+- Migrated from `FastMCP` to the `mcp` 2.0 `MCPServer` API and dropped the
+  temporary `mcp<2.0.0` pin put in place when 2.0 first broke the import.
+- CI now runs ruff, `mypy --strict`, the unit tests, and a real stdio MCP
+  handshake on ubuntu/windows/macos across Python 3.10-3.13, with
+  Dependabot watching both the `pip` and `github-actions` ecosystems.
+- Added a PyPI trusted-publishing (OIDC) release workflow and verified
+  `python -m build`/`twine check` output; the package is not yet published.
+- Added a `py.typed` marker (PEP 561) so type checkers recognize that
+  `qemu_mcp` ships inline types, instead of treating it as untyped.
 
 ### Fixed
 - `qemu_type` translated characters while sending, so an untypeable character left a
@@ -130,14 +139,23 @@ was tested, what still needs a real QEMU boot) behind each entry.
   regardless of the VM's actual serial output, since an empty search
   string always matches at position 0; `text` is now required to be
   non-empty.
-
-### Changed
-- Migrated from `FastMCP` to the `mcp` 2.0 `MCPServer` API and dropped the
-  temporary `mcp<2.0.0` pin put in place when 2.0 first broke the import.
-- CI now runs ruff, `mypy --strict`, the unit tests, and a real stdio MCP
-  handshake on ubuntu/windows/macos across Python 3.10-3.13, with
-  Dependabot watching both the `pip` and `github-actions` ecosystems.
-- Added a PyPI trusted-publishing (OIDC) release workflow and verified
-  `python -m build`/`twine check` output; the package is not yet published.
-- Added a `py.typed` marker (PEP 561) so type checkers recognize that
-  `qemu_mcp` ships inline types, instead of treating it as untyped.
+- `QMPClient.close()`/`SerialConsole.close()` could null out the socket
+  while a `command()`/`send()` call was still in flight on another thread,
+  turning a clean `QMPError`/`SerialError` into a raw `AttributeError`;
+  both `close()` methods now hold the same lock the round trip does.
+- `vm.version()` let a hung/killed `qemu-system-* --version` raise a raw
+  `subprocess.TimeoutExpired` instead of the module's own clear error.
+- `vm.stop()`'s kill-timeout branch killed the process but never reaped it
+  afterward, unlike the equivalent `vm.boot()` failure path.
+- `SerialConsole.send()`'s reconnect-after-drop path leaked the freshly
+  opened socket if the resend on it also failed.
+- `qemu_serial_send`/`qemu_qmp` didn't mark themselves in-use the way
+  `qemu_wait_serial`/`qemu_wait_screen`/`qemu_screenshot` already did, so a
+  concurrent `qemu_stop` could close their connection out from under them.
+- `reap_dead()` (called from `qemu_list` and `qemu_boot`) closed a dead
+  VM's connections and removed its workdir with no wait at all for an
+  in-flight caller, unlike `qemu_stop`'s own brief wait; it now waits the
+  same way.
+- `SerialConsole.send()`'s reconnect path closed the dead socket without
+  guarding against `close()` itself raising `OSError`, which could escape
+  uncaught and skip clearing the stale socket reference for the next call.
