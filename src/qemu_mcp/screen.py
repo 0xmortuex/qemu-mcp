@@ -9,14 +9,7 @@ hundreds of pixels per frame, so a small threshold separates the two.
 
 from __future__ import annotations
 
-import hashlib
-
 from PIL import Image, ImageChops
-
-
-def hash_file(path: str) -> str:
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
 
 
 def load_frame(path: str) -> Image.Image:

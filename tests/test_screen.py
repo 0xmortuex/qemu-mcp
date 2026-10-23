@@ -1,7 +1,7 @@
 """Unit tests for screen.py's framebuffer-settle detection.
 
-No QEMU needed - hash_file only reads plain files, and StabilityTracker
-only counts hashes fed to it.
+No QEMU needed - load_frame only reads plain files, and StabilityTracker
+only counts pixel diffs fed to it.
 """
 
 import os
@@ -12,22 +12,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from qemu_mcp import screen  # noqa: E402
-
-
-def test_hash_file_same_content_same_hash(tmp_path):
-    a = tmp_path / "a.ppm"
-    b = tmp_path / "b.ppm"
-    a.write_bytes(b"same frame")
-    b.write_bytes(b"same frame")
-    assert screen.hash_file(str(a)) == screen.hash_file(str(b))
-
-
-def test_hash_file_different_content_different_hash(tmp_path):
-    a = tmp_path / "a.ppm"
-    b = tmp_path / "b.ppm"
-    a.write_bytes(b"frame one")
-    b.write_bytes(b"frame two")
-    assert screen.hash_file(str(a)) != screen.hash_file(str(b))
 
 
 def test_stability_tracker_rejects_non_positive_stable_polls():
