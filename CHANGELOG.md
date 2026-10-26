@@ -47,6 +47,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `idempotentHint` and `openWorldHint`, all stated explicitly, so clients
   can tell which calls to confirm with the user. `tests/test_tool_hints.py`
   pins every value.
+- `smp_cores` / `smp_threads` / `smp_sockets` / `smp_maxcpus` parameters on
+  `qemu_boot`, combined onto the same `-smp` flag as `smp` (e.g.
+  `-smp 8,cores=4,threads=2,sockets=1`), for shaping a guest's CPU topology
+  rather than just its total vCPU count.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

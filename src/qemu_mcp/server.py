@@ -88,6 +88,10 @@ def qemu_boot(
     extra_args: str | None = None,
     machine: str | None = None,
     smp: int | None = None,
+    smp_cores: int | None = None,
+    smp_threads: int | None = None,
+    smp_sockets: int | None = None,
+    smp_maxcpus: int | None = None,
     accel: str | None = None,
     cpu: str | None = None,
     qmp_connect_timeout_s: float = 20.0,
@@ -112,7 +116,13 @@ def qemu_boot(
     passed as QEMU's -M and is required on some archs - aarch64 and riscv64
     have no default machine and need e.g. machine="virt". smp sets the number
     of virtual CPUs (QEMU -smp), for testing SMP-aware guest code; must be
-    positive when given. accel is passed as QEMU's -accel (e.g. "kvm",
+    positive when given. smp_cores/smp_threads/smp_sockets/smp_maxcpus add
+    QEMU's -smp CPU-topology qualifiers (cores=/threads=/sockets=/maxcpus=)
+    onto the same -smp flag instead of a flat count - for guest code that
+    cares about socket/core/thread shape (ACPI MADT entries, CPUID topology
+    leaves, per-socket vs. per-core scheduling), not just a total vCPU
+    number. Each must be positive when given; any of them (with or without
+    smp itself) causes -smp to be emitted. accel is passed as QEMU's -accel (e.g. "kvm",
     "kvm:tcg" to fall back to software emulation if KVM isn't available,
     "hvf"/"hvf:tcg" on macOS, "whpx:tcg" on Windows) to opt into hardware
     acceleration; left unset, QEMU defaults to TCG (software emulation),
@@ -129,7 +139,8 @@ def qemu_boot(
     (must be valid shell-style quoting, e.g. no unbalanced quotes). extra_args
     may not contain a flag qemu_boot already sets itself: -name, -m, -display,
     -qmp always; -M/-machine, -cdrom/-boot, -kernel, -append, -initrd, -smp,
-    -accel, -cpu when the corresponding param above is also given.
+    -accel, -cpu when the corresponding param above is also given (-smp
+    collides when smp or any of the smp_* topology params is given).
     -drive is exempt from this check even when disk is given - QEMU allows
     repeated -drive flags, so extra_args can add further disks, e.g.
     extra_args="-drive file=data.img,format=raw" for a second drive alongside
@@ -152,10 +163,17 @@ def qemu_boot(
     """
     vm = vmmod.boot(
         name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine, smp,
-        accel, cpu, qmp_connect_timeout_s, qmp_read_timeout_s,
+        smp_cores=smp_cores, smp_threads=smp_threads, smp_sockets=smp_sockets,
+        smp_maxcpus=smp_maxcpus, accel=accel, cpu=cpu,
+        qmp_connect_timeout_s=qmp_connect_timeout_s, qmp_read_timeout_s=qmp_read_timeout_s,
     )
     machine_note = f", -M {machine}" if machine else ""
-    smp_note = f", -smp {smp}" if smp else ""
+    smp_bits = [str(smp)] if smp else []
+    smp_bits += [f"cores={smp_cores}"] if smp_cores else []
+    smp_bits += [f"threads={smp_threads}"] if smp_threads else []
+    smp_bits += [f"sockets={smp_sockets}"] if smp_sockets else []
+    smp_bits += [f"maxcpus={smp_maxcpus}"] if smp_maxcpus else []
+    smp_note = f", -smp {','.join(smp_bits)}" if smp_bits else ""
     accel_note = f", -accel {accel}" if accel else ""
     cpu_note = f", -cpu {cpu}" if cpu else ""
     return (

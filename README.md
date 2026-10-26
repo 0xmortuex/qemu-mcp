@@ -30,7 +30,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 
 | Tool | What it does |
 |------|--------------|
-| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), an optional `cpu` (QEMU `-cpu`, e.g. `"qemu64,+avx"`/`"max"`/`"host"`, to select or customize the emulated CPU model for testing a specific feature set), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
+| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code) plus optional `smp_cores`/`smp_threads`/`smp_sockets`/`smp_maxcpus` (QEMU `-smp` topology qualifiers `cores=`/`threads=`/`sockets=`/`maxcpus=` combined onto the same flag, for shaping a guest's CPU topology rather than just its total count), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), an optional `cpu` (QEMU `-cpu`, e.g. `"qemu64,+avx"`/`"max"`/`"host"`, to select or customize the emulated CPU model for testing a specific feature set), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
 | `qemu_version` | Report the installed `qemu-system-<arch> --version` output, without booting a VM |
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
@@ -167,6 +167,22 @@ qemu_boot(name="k", kernel="build/kernel.elf", accel="kvm", cpu="host")  # pass 
 
 Check `qemu-system-<arch> -cpu help` for the full list of models/features an
 arch supports.
+
+### CPU topology
+
+`smp` alone sets a flat vCPU count. For guest code that cares about the
+socket/core/thread *shape* (ACPI MADT entries, CPUID topology leaves,
+per-socket vs. per-core scheduling), pass `smp_cores`/`smp_threads`/
+`smp_sockets`/`smp_maxcpus` too - they're combined onto the same `-smp` flag:
+
+```
+qemu_boot(name="k", kernel="build/kernel.elf",
+          smp=8, smp_cores=4, smp_threads=2, smp_sockets=1)
+# -> -smp 8,cores=4,threads=2,sockets=1
+```
+
+`smp` itself is optional when the topology params are given - QEMU can infer
+the total CPU count from `cores`/`threads`/`sockets`.
 
 ## Debugging the kernel
 

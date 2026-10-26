@@ -186,6 +186,10 @@ def _check_extra_args_conflicts(
     initrd: str | None,
     disk: str | None,
     smp: int | None,
+    smp_cores: int | None,
+    smp_threads: int | None,
+    smp_sockets: int | None,
+    smp_maxcpus: int | None,
     accel: str | None,
     cpu: str | None,
 ) -> None:
@@ -199,7 +203,12 @@ def _check_extra_args_conflicts(
     controlled = set(_ALWAYS_SET_FLAGS)
     given = {
         "machine": machine, "iso": iso, "kernel": kernel, "append": append,
-        "initrd": initrd, "disk": disk, "smp": smp, "accel": accel, "cpu": cpu,
+        "initrd": initrd, "disk": disk,
+        # -smp is one combined flag (vm.boot() builds "-smp n,cores=...,...")
+        # fed by five separate params - any one of them being set means -smp
+        # will be on the command line, so all five must gate the same conflict.
+        "smp": smp or smp_cores or smp_threads or smp_sockets or smp_maxcpus,
+        "accel": accel, "cpu": cpu,
     }
     for param, flags in _CONDITIONAL_FLAGS.items():
         if given[param]:
@@ -418,6 +427,10 @@ def boot(
     extra_args: str | None,
     machine: str | None = None,
     smp: int | None = None,
+    smp_cores: int | None = None,
+    smp_threads: int | None = None,
+    smp_sockets: int | None = None,
+    smp_maxcpus: int | None = None,
     accel: str | None = None,
     cpu: str | None = None,
     qmp_connect_timeout_s: float = 20.0,
@@ -434,6 +447,14 @@ def boot(
         )
     if smp is not None and smp <= 0:
         raise ValueError(f"invalid smp {smp!r}: must be a positive number of CPUs")
+    for _topology_name, _topology_val in (
+        ("smp_cores", smp_cores), ("smp_threads", smp_threads),
+        ("smp_sockets", smp_sockets), ("smp_maxcpus", smp_maxcpus),
+    ):
+        if _topology_val is not None and _topology_val <= 0:
+            raise ValueError(
+                f"invalid {_topology_name} {_topology_val!r}: must be a positive integer"
+            )
     if qmp_connect_timeout_s <= 0:
         raise ValueError(
             f"invalid qmp_connect_timeout_s {qmp_connect_timeout_s!r}: must be positive"
@@ -452,7 +473,8 @@ def boot(
             raise ValueError(f"invalid extra_args {extra_args!r}: {e}") from None
     _check_extra_args_conflicts(
         extra_argv, machine=machine, iso=iso, kernel=kernel, append=append,
-        initrd=initrd, disk=disk, smp=smp, accel=accel, cpu=cpu,
+        initrd=initrd, disk=disk, smp=smp, smp_cores=smp_cores, smp_threads=smp_threads,
+        smp_sockets=smp_sockets, smp_maxcpus=smp_maxcpus, accel=accel, cpu=cpu,
     )
 
     reap_dead()
@@ -493,8 +515,19 @@ def boot(
             ]
             if machine:
                 args += ["-M", machine]
+            smp_parts = []
             if smp:
-                args += ["-smp", str(smp)]
+                smp_parts.append(str(smp))
+            if smp_cores:
+                smp_parts.append(f"cores={smp_cores}")
+            if smp_threads:
+                smp_parts.append(f"threads={smp_threads}")
+            if smp_sockets:
+                smp_parts.append(f"sockets={smp_sockets}")
+            if smp_maxcpus:
+                smp_parts.append(f"maxcpus={smp_maxcpus}")
+            if smp_parts:
+                args += ["-smp", ",".join(smp_parts)]
             if accel:
                 args += ["-accel", accel]
             if cpu:

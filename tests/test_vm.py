@@ -270,6 +270,21 @@ def test_boot_rejects_non_positive_smp(smp):
         assert repr(smp) in str(e)
 
 
+@pytest.mark.parametrize("topology_param", ["smp_cores", "smp_threads", "smp_sockets", "smp_maxcpus"])
+@pytest.mark.parametrize("value", [0, -1, -4])
+def test_boot_rejects_non_positive_smp_topology_params(topology_param, value):
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, **{topology_param: value},
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert topology_param in str(e)
+        assert repr(value) in str(e)
+
+
 @pytest.mark.parametrize("qmp_connect_timeout_s", [0, -1.0, -5])
 def test_boot_rejects_non_positive_qmp_connect_timeout(qmp_connect_timeout_s):
     try:
@@ -360,6 +375,8 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
         ("-append console=ttyS1", {"kernel": "some-kernel", "append": "console=ttyS0"}),
         ("-initrd other.img", {"kernel": "some-kernel", "initrd": "some.img"}),
         ("-smp 4", {"smp": 2}),
+        # -smp also collides when only a topology param is given, no flat smp=.
+        ("-smp 4", {"smp_cores": 2}),
         ("-accel tcg", {"accel": "kvm"}),
         ("-cpu qemu64", {"cpu": "max"}),
     ],
@@ -392,7 +409,8 @@ def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, 
         # test_boot_allows_a_second_drive_in_extra_args_alongside_disk below
         # for the disk= given case, which is the one that used to be rejected.
         ("-drive file=other.img", {"disk": None}),
-        # -smp only conflicts when smp= is actually given.
+        # -smp only conflicts when smp= is actually given (and none of the
+        # smp_* topology params are given either - all default to None).
         ("-smp 4", {"smp": None}),
         # -accel only conflicts when accel= is actually given.
         ("-accel tcg", {"accel": None}),
@@ -1707,6 +1725,57 @@ def test_boot_omits_smp_flag_when_not_given(tmp_path, monkeypatch):
         assert "-smp" not in booted.cmdline
     finally:
         booted = vm._vms.pop("boot-without-smp", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_combines_smp_and_topology_params_into_one_flag(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-smp-topology", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+            smp=8, smp_cores=4, smp_threads=2, smp_sockets=1, smp_maxcpus=16,
+        )
+        # Exactly one -smp flag, not a repeated/separate one per param.
+        assert booted.cmdline.count("-smp") == 1
+        value = booted.cmdline[booted.cmdline.index("-smp") + 1]
+        assert value == "8,cores=4,threads=2,sockets=1,maxcpus=16"
+    finally:
+        booted = vm._vms.pop("boot-with-smp-topology", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_passes_smp_topology_without_a_flat_smp_count(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-topology-only", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, smp_cores=2, smp_threads=2,
+        )
+        value = booted.cmdline[booted.cmdline.index("-smp") + 1]
+        assert value == "cores=2,threads=2"
+    finally:
+        booted = vm._vms.pop("boot-with-topology-only", None)
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
