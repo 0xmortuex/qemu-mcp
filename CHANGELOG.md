@@ -51,6 +51,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `qemu_boot`, combined onto the same `-smp` flag as `smp` (e.g.
   `-smp 8,cores=4,threads=2,sockets=1`), for shaping a guest's CPU topology
   rather than just its total vCPU count.
+- `hostfwd` parameter on `qemu_boot` (e.g. `"tcp::2222-:22"`), a convenience
+  that builds the `-netdev user,id=net0,hostfwd=...` / `-device
+  e1000,netdev=net0` pair for reaching a guest service (SSH, a web server
+  under test) from the host, instead of needing QEMU's own NIC/chipset flags.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

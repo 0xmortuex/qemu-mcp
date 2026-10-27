@@ -321,6 +321,49 @@ def test_boot_rejects_non_positive_qmp_read_timeout(qmp_read_timeout_s):
         assert repr(qmp_read_timeout_s) in str(e)
 
 
+@pytest.mark.parametrize(
+    "hostfwd", ["2222-22", "tcp:2222-22", "tcp::2222-22", "tcp::abc-:22", "::2222-", ""]
+)
+def test_boot_rejects_malformed_hostfwd(hostfwd):
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd=hostfwd,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr(hostfwd) in str(e)
+
+
+@pytest.mark.parametrize("hostfwd", ["tcp::2222-:22", "udp::5000-:5000", ":80-:80"])
+def test_boot_accepts_well_formed_hostfwd(hostfwd, monkeypatch):
+    # Confirms the format check doesn't reject valid QEMU hostfwd rules - it
+    # still fails past that point (no qemu-mcp-* fake binary on PATH here),
+    # the point is that failure isn't the hostfwd format error.
+    monkeypatch.setattr(vm, "find_qemu", lambda arch: (_ for _ in ()).throw(FileNotFoundError("nope")))
+    with pytest.raises(FileNotFoundError):
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd=hostfwd,
+        )
+
+
+def test_boot_does_not_create_workdir_for_malformed_hostfwd(monkeypatch):
+    created = _track_mkdtemp(monkeypatch)
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd="not-a-hostfwd-rule",
+        )
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    assert created == []
+
+
 @pytest.mark.parametrize("extra_args", ['-device foo "bar', "'unterminated"])
 def test_boot_rejects_malformed_extra_args(extra_args):
     # Regression test: shlex.split() raises a raw ValueError (not caught
@@ -379,6 +422,8 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
         ("-smp 4", {"smp_cores": 2}),
         ("-accel tcg", {"accel": "kvm"}),
         ("-cpu qemu64", {"cpu": "max"}),
+        ("-netdev user,id=net0", {"hostfwd": "tcp::2222-:22"}),
+        ("-device e1000,netdev=net0", {"hostfwd": "tcp::2222-:22"}),
     ],
 )
 def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, kwargs):
@@ -421,6 +466,10 @@ def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, 
         # test_boot_allows_unrelated_chardev_and_serial_in_extra_args below
         # for more cases, this one just confirms it's not a blanket ban.
         ("-chardev socket,id=mon1,path=/tmp/mon1", {}),
+        # -netdev/-device never conflict unless hostfwd is actually given (and
+        # even then, only when they reuse qemu-mcp's own id=net0/netdev=net0 -
+        # see test_boot_allows_unrelated_netdev_and_device_in_extra_args below).
+        ("-netdev user,id=net0", {"hostfwd": None}),
     ],
 )
 def test_boot_allows_extra_args_flag_when_its_own_param_is_not_given(extra_args, kwargs):
@@ -500,6 +549,56 @@ def test_boot_allows_unrelated_chardev_and_serial_in_extra_args(tmp_path, monkey
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_allows_unrelated_netdev_and_device_in_extra_args(tmp_path, monkeypatch):
+    # QEMU allows repeated -netdev/-device for unrelated NICs (the README's
+    # own kernel-test example already does this for a guest driver test) -
+    # only reusing vm.boot()'s own id=net0 netdev or a -device pointed at
+    # netdev=net0 should be rejected when hostfwd is given (covered by
+    # test_boot_rejects_extra_args_that_collide_with_controlled_flags above);
+    # an unrelated id/netdev should boot fine alongside hostfwd.
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-second-netdev", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, hostfwd="tcp::2222-:22",
+            extra_args="-netdev user,id=n1 -device rtl8139,netdev=n1",
+        )
+        assert booted.cmdline.count("-netdev") == 2
+        assert booted.cmdline.count("-device") == 2
+        assert "user,id=n1" in booted.cmdline
+        assert "rtl8139,netdev=n1" in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-with-second-netdev", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+def test_extra_args_hostfwd_conflict_ignores_unrelated_netdev_and_device():
+    # Direct unit coverage of the keyed comparison itself, without going
+    # through a full boot() - a bare -netdev/-device with a different
+    # id/netdev from qemu-mcp's own id=net0 is never a conflict.
+    assert vm._extra_args_hostfwd_conflict(["-netdev", "user,id=n1"]) is None
+    assert vm._extra_args_hostfwd_conflict(["-device", "rtl8139,netdev=n1"]) is None
+
+
+def test_extra_args_hostfwd_conflict_catches_id_and_netdev_reuse():
+    assert vm._extra_args_hostfwd_conflict(["-netdev", "user,id=net0,hostfwd=tcp::1-:1"]) == (
+        "-netdev user,id=net0,hostfwd=tcp::1-:1"
+    )
+    assert vm._extra_args_hostfwd_conflict(["-device", "e1000,netdev=net0"]) == (
+        "-device e1000,netdev=net0"
+    )
 
 
 def test_extra_args_serial_conflict_ignores_unrelated_chardev_and_serial():
@@ -1870,6 +1969,58 @@ def test_boot_omits_cpu_flag_when_not_given(tmp_path, monkeypatch):
         assert "-cpu" not in booted.cmdline
     finally:
         booted = vm._vms.pop("boot-without-cpu", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_passes_hostfwd_onto_the_qemu_command_line(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-hostfwd", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd="tcp::2222-:22",
+        )
+        assert "-netdev" in booted.cmdline
+        assert booted.cmdline[booted.cmdline.index("-netdev") + 1] == (
+            "user,id=net0,hostfwd=tcp::2222-:22"
+        )
+        assert "-device" in booted.cmdline
+        assert booted.cmdline[booted.cmdline.index("-device") + 1] == "e1000,netdev=net0"
+    finally:
+        booted = vm._vms.pop("boot-with-hostfwd", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_omits_hostfwd_flags_when_not_given(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-without-hostfwd", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert "-netdev" not in booted.cmdline
+        assert "-device" not in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-without-hostfwd", None)
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)

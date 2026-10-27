@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -157,6 +158,35 @@ _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
 _SERIAL_CHARDEV_ID = "serial0"
 _SERIAL_BACKEND = f"chardev:{_SERIAL_CHARDEV_ID}"
 
+# -netdev/-device are NOT in _CONDITIONAL_FLAGS even though hostfwd sets both,
+# for the same reason -chardev/-serial aren't: the README's own kernel-test
+# example already uses an unrelated -netdev/-device pair in extra_args (a
+# guest NIC driver test, nothing to do with host port-forwarding), and the
+# aarch64 display note recommends adding another -device of its own. Only a
+# token that reuses vm.boot()'s own id=net0 netdev or points a -device at
+# netdev=net0 actually collides - see _extra_args_hostfwd_conflict below.
+_HOSTFWD_NETDEV_ID = "net0"
+_HOSTFWD_NIC_MODEL = "e1000"
+_HOSTFWD_RE = re.compile(r"^(?:(?:tcp|udp):)?[\w.]*:\d+-[\w.]*:\d+$")
+
+
+def _extra_args_hostfwd_conflict(extra_argv: list[str]) -> str | None:
+    """Return the -netdev/-device token pair that collides with vm.boot()'s
+    own hostfwd netdev (id=net0), or None if extra_argv adds none.
+
+    Same keyed-comparison shape as _extra_args_serial_conflict: a bare
+    "-netdev"/"-device" in extra_args isn't itself a collision, only one
+    that names the exact id/netdev vm.boot() already uses when hostfwd is
+    given is - an unrelated NIC (a guest driver test, a second user-mode
+    network) is a legitimate addition, not a duplicate.
+    """
+    for flag, value in zip(extra_argv, extra_argv[1:]):
+        if flag == "-netdev" and f"id={_HOSTFWD_NETDEV_ID}" in value.split(","):
+            return f"-netdev {value}"
+        if flag == "-device" and f"netdev={_HOSTFWD_NETDEV_ID}" in value.split(","):
+            return f"-device {value}"
+    return None
+
 
 def _extra_args_serial_conflict(extra_argv: list[str]) -> str | None:
     """Return the -chardev/-serial token pair that collides with vm.boot()'s
@@ -192,6 +222,7 @@ def _check_extra_args_conflicts(
     smp_maxcpus: int | None,
     accel: str | None,
     cpu: str | None,
+    hostfwd: str | None,
 ) -> None:
     """Reject an extra_args token that duplicates a flag vm.boot() already sets.
 
@@ -217,6 +248,10 @@ def _check_extra_args_conflicts(
     serial_conflict = _extra_args_serial_conflict(extra_argv)
     if serial_conflict is not None:
         conflicts.append(serial_conflict)
+    if hostfwd:
+        hostfwd_conflict = _extra_args_hostfwd_conflict(extra_argv)
+        if hostfwd_conflict is not None:
+            conflicts.append(hostfwd_conflict)
     if conflicts:
         raise ValueError(
             f"extra_args contains {conflicts!r}, which qemu-mcp already sets on the "
@@ -433,6 +468,7 @@ def boot(
     smp_maxcpus: int | None = None,
     accel: str | None = None,
     cpu: str | None = None,
+    hostfwd: str | None = None,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> VM:
@@ -455,6 +491,11 @@ def boot(
             raise ValueError(
                 f"invalid {_topology_name} {_topology_val!r}: must be a positive integer"
             )
+    if hostfwd is not None and not _HOSTFWD_RE.match(hostfwd):
+        raise ValueError(
+            f"invalid hostfwd {hostfwd!r}: must look like QEMU's hostfwd rule "
+            "(e.g. \"tcp::2222-:22\"), i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
+        )
     if qmp_connect_timeout_s <= 0:
         raise ValueError(
             f"invalid qmp_connect_timeout_s {qmp_connect_timeout_s!r}: must be positive"
@@ -475,6 +516,7 @@ def boot(
         extra_argv, machine=machine, iso=iso, kernel=kernel, append=append,
         initrd=initrd, disk=disk, smp=smp, smp_cores=smp_cores, smp_threads=smp_threads,
         smp_sockets=smp_sockets, smp_maxcpus=smp_maxcpus, accel=accel, cpu=cpu,
+        hostfwd=hostfwd,
     )
 
     reap_dead()
@@ -532,6 +574,11 @@ def boot(
                 args += ["-accel", accel]
             if cpu:
                 args += ["-cpu", cpu]
+            if hostfwd:
+                args += [
+                    "-netdev", f"user,id={_HOSTFWD_NETDEV_ID},hostfwd={hostfwd}",
+                    "-device", f"{_HOSTFWD_NIC_MODEL},netdev={_HOSTFWD_NETDEV_ID}",
+                ]
             if iso:
                 args += ["-cdrom", iso, "-boot", "d"]
             if kernel:

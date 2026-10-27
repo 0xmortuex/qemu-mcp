@@ -94,6 +94,7 @@ def qemu_boot(
     smp_maxcpus: int | None = None,
     accel: str | None = None,
     cpu: str | None = None,
+    hostfwd: str | None = None,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> str:
@@ -152,6 +153,18 @@ def qemu_boot(
     COM2 backed by another chardev) freely, but reusing id=serial0 or
     pointing another -serial at chardev:serial0 is rejected, since that's
     the pair qemu_serial/qemu_serial_send depend on.
+    hostfwd is a convenience for reaching a guest service (SSH, a web server
+    under test) from the host, without needing QEMU-specific NIC/chipset
+    knowledge: give it QEMU's hostfwd rule, e.g. hostfwd="tcp::2222-:22" to
+    forward host port 2222 to guest port 22, and qemu_boot adds the
+    "-netdev user,id=net0,hostfwd=..." / "-device e1000,netdev=net0" pair
+    for you (the guest needs its own driver for an e1000 NIC - most
+    general-purpose OSes, Linux included, have one built in). Must look
+    like [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport. -netdev/-device
+    are similarly exempt from the extra_args conflict check except for the
+    exact netdev hostfwd's own NIC uses (id=net0 / netdev=net0) - extra_args
+    can add an unrelated NIC (e.g. for testing a guest driver) freely, but
+    reusing id=net0 or pointing a -device at netdev=net0 is rejected.
     qmp_connect_timeout_s bounds how long to retry connecting to QEMU's QMP
     socket after launch (raise it on a slow/loaded host where QEMU's first
     launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how
@@ -164,7 +177,7 @@ def qemu_boot(
     vm = vmmod.boot(
         name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine, smp,
         smp_cores=smp_cores, smp_threads=smp_threads, smp_sockets=smp_sockets,
-        smp_maxcpus=smp_maxcpus, accel=accel, cpu=cpu,
+        smp_maxcpus=smp_maxcpus, accel=accel, cpu=cpu, hostfwd=hostfwd,
         qmp_connect_timeout_s=qmp_connect_timeout_s, qmp_read_timeout_s=qmp_read_timeout_s,
     )
     machine_note = f", -M {machine}" if machine else ""
@@ -176,9 +189,10 @@ def qemu_boot(
     smp_note = f", -smp {','.join(smp_bits)}" if smp_bits else ""
     accel_note = f", -accel {accel}" if accel else ""
     cpu_note = f", -cpu {cpu}" if cpu else ""
+    hostfwd_note = f", hostfwd={hostfwd}" if hostfwd else ""
     return (
         f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB"
-        f"{machine_note}{smp_note}{accel_note}{cpu_note}).\n"
+        f"{machine_note}{smp_note}{accel_note}{cpu_note}{hostfwd_note}).\n"
         f"Serial log: {vm.serial_path}\n"
         f"Next: qemu_wait_serial for a boot marker, or qemu_screenshot to see the display."
     )

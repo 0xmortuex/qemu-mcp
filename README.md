@@ -30,7 +30,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 
 | Tool | What it does |
 |------|--------------|
-| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code) plus optional `smp_cores`/`smp_threads`/`smp_sockets`/`smp_maxcpus` (QEMU `-smp` topology qualifiers `cores=`/`threads=`/`sockets=`/`maxcpus=` combined onto the same flag, for shaping a guest's CPU topology rather than just its total count), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), an optional `cpu` (QEMU `-cpu`, e.g. `"qemu64,+avx"`/`"max"`/`"host"`, to select or customize the emulated CPU model for testing a specific feature set), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
+| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code) plus optional `smp_cores`/`smp_threads`/`smp_sockets`/`smp_maxcpus` (QEMU `-smp` topology qualifiers `cores=`/`threads=`/`sockets=`/`maxcpus=` combined onto the same flag, for shaping a guest's CPU topology rather than just its total count), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), an optional `cpu` (QEMU `-cpu`, e.g. `"qemu64,+avx"`/`"max"`/`"host"`, to select or customize the emulated CPU model for testing a specific feature set), an optional `hostfwd` (QEMU's `hostfwd` rule, e.g. `"tcp::2222-:22"`, to reach a guest service like SSH from the host without needing QEMU's own NIC/chipset flags), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
 | `qemu_version` | Report the installed `qemu-system-<arch> --version` output, without booting a VM |
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
@@ -183,6 +183,23 @@ qemu_boot(name="k", kernel="build/kernel.elf",
 
 `smp` itself is optional when the topology params are given - QEMU can infer
 the total CPU count from `cores`/`threads`/`sockets`.
+
+### Host port forwarding
+
+To reach a guest service (SSH, a web server under test) from the host without
+needing QEMU's NIC/chipset flags, pass `hostfwd` (QEMU's `hostfwd` rule):
+
+```
+qemu_boot(name="k", disk="build/linux.qcow2", hostfwd="tcp::2222-:22")
+# host:2222 -> guest:22, e.g. ssh -p 2222 user@localhost
+```
+
+This adds `-netdev user,id=net0,hostfwd=...` and `-device e1000,netdev=net0`
+for you - the guest needs its own e1000 driver, which most general-purpose
+OSes (Linux included) already have built in. For a bare-metal kernel with its
+own NIC driver (like the `rtl8139` example above), use `extra_args` instead -
+`hostfwd` is for forwarding a port to a guest that already has working
+networking, not for picking which NIC a from-scratch kernel talks to.
 
 ## Debugging the kernel
 
