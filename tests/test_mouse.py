@@ -53,7 +53,17 @@ def test_click_events_appends_button_down_then_up():
 
 
 def test_click_events_accepts_all_named_buttons():
-    for button in ("left", "right", "middle"):
+    for button in (
+        "left",
+        "right",
+        "middle",
+        "wheel-up",
+        "wheel-down",
+        "wheel-left",
+        "wheel-right",
+        "side",
+        "extra",
+    ):
         events = mouse.click_events(0.1, 0.1, button)
         assert events[2]["data"]["button"] == button
 

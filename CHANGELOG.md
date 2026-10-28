@@ -55,6 +55,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   that builds the `-netdev user,id=net0,hostfwd=...` / `-device
   e1000,netdev=net0` pair for reaching a guest service (SSH, a web server
   under test) from the host, instead of needing QEMU's own NIC/chipset flags.
+- `qemu_mouse`'s `button` now also accepts `wheel-up`/`wheel-down`/
+  `wheel-left`/`wheel-right` (scroll a widget under the pointer) and
+  `side`/`extra` (a 5-button mouse's extra buttons), not just
+  `left`/`right`/`middle`.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

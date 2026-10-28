@@ -35,7 +35,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
 | `qemu_key` | Press a key or chord: `enter`, `esc`, `f12`, `ctrl-alt-f2`… |
-| `qemu_mouse` | Move the absolute pointer (fractions of screen width/height) and optionally click `left`/`right`/`middle` |
+| `qemu_mouse` | Move the absolute pointer (fractions of screen width/height) and optionally click `left`/`right`/`middle`, scroll with `wheel-up`/`wheel-down`/`wheel-left`/`wheel-right`, or press a 5-button mouse's `side`/`extra` buttons |
 | `qemu_snapshot_save` | Save a full RAM+device snapshot under a tag (needs a qcow2 disk). Reports failure if QEMU's savevm rejects it (e.g. a raw disk) instead of claiming success |
 | `qemu_snapshot_load` | Restore a VM to a previously saved snapshot tag. Reports failure if QEMU's loadvm rejects it (e.g. an unknown tag) instead of claiming success |
 | `qemu_snapshot_delete` | Delete a previously saved snapshot tag, freeing its space in the qcow2 disk. Reports failure if QEMU's delvm rejects it (e.g. an unknown tag) instead of claiming success |

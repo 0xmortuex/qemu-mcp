@@ -286,9 +286,13 @@ def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
 
     x and y are fractions of the screen width/height (0.0 = left/top, 1.0 =
     right/bottom) - read them off a qemu_screenshot. button is "left",
-    "right", or "middle" for a full click at that position; omit it to just
-    move the pointer. Needs the guest to have an absolute pointer (USB
-    tablet or PS/2 mouse) to track it - most GUIs have one by default.
+    "right", or "middle" for a full click at that position; "wheel-up",
+    "wheel-down", "wheel-left", or "wheel-right" to scroll a scrollable
+    widget under the pointer instead; or "side"/"extra" for a 5-button
+    mouse's extra side buttons (needs the guest's PS/2 mouse driver in IMEX
+    mode to see them). Omit button to just move the pointer. Needs the
+    guest to have an absolute pointer (USB tablet or PS/2 mouse) to track
+    it - most GUIs have one by default.
     """
     vm = vmmod.get_vm(name)
     events = mousemod.click_events(x, y, button) if button else mousemod.move_events(x, y)
