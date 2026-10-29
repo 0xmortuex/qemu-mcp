@@ -59,6 +59,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `wheel-left`/`wheel-right` (scroll a widget under the pointer) and
   `side`/`extra` (a 5-button mouse's extra buttons), not just
   `left`/`right`/`middle`.
+- `qemu_key` now accepts `sysrq` as a key name, to send the Linux Magic
+  SysRq key (e.g. `alt-sysrq-s`/`alt-sysrq-c` to sync disks or force a
+  crash dump on a guest kernel built with `CONFIG_MAGIC_SYSRQ`).
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

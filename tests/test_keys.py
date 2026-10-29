@@ -113,6 +113,8 @@ def test_char_to_keys_rejects_non_single_char(ch):
         ("super", ["meta_l"]),
         ("pageup", ["pgup"]),
         ("pagedown", ["pgdn"]),
+        ("sysrq", ["sysrq"]),
+        ("alt-sysrq-s", ["alt", "sysrq", "s"]),
         (" ctrl-c ", ["ctrl", "c"]),  # surrounding whitespace stripped
         ("--", ["minus"]),  # "--" is an escaped literal "-" key
         ("ctrl--", ["ctrl", "minus"]),  # ctrl + literal "-" (e.g. zoom out)

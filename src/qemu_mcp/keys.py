@@ -37,6 +37,7 @@ _NAMED = {
     "ctrl": "ctrl", "control": "ctrl", "alt": "alt", "shift": "shift",
     "meta": "meta_l", "win": "meta_l", "super": "meta_l",
     "capslock": "caps_lock", "menu": "menu", "prtsc": "print",
+    "sysrq": "sysrq",
 }
 _NAMED.update({f"f{i}": f"f{i}" for i in range(1, 13)})
 
