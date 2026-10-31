@@ -496,6 +496,12 @@ def boot(
             f"invalid hostfwd {hostfwd!r}: must look like QEMU's hostfwd rule "
             "(e.g. \"tcp::2222-:22\"), i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
         )
+    if (append or initrd) and not kernel:
+        culprit = "append" if append else "initrd"
+        raise ValueError(
+            f"invalid {culprit}: given without kernel - QEMU rejects "
+            "-append/-initrd on the command line without -kernel"
+        )
     if qmp_connect_timeout_s <= 0:
         raise ValueError(
             f"invalid qmp_connect_timeout_s {qmp_connect_timeout_s!r}: must be positive"

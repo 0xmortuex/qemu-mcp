@@ -364,6 +364,51 @@ def test_boot_does_not_create_workdir_for_malformed_hostfwd(monkeypatch):
     assert created == []
 
 
+@pytest.mark.parametrize("culprit", ["append", "initrd"])
+def test_boot_rejects_append_or_initrd_without_kernel(culprit):
+    # Regression test: QEMU itself rejects -append/-initrd on the command
+    # line without -kernel ("-append only allowed with -kernel option"),
+    # which used to surface as a confusing "QEMU exited immediately" dump
+    # of QEMU's own stderr instead of a clear pre-flight error.
+    kwargs = {"append": None, "initrd": None}
+    kwargs[culprit] = "something"
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, disk=None, extra_args=None, **kwargs,
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert culprit in str(e)
+
+
+def test_boot_accepts_append_and_initrd_with_kernel(monkeypatch):
+    # Confirms the check doesn't reject the normal kernel+append+initrd
+    # combo - it still fails past that point (no qemu-mcp-* fake binary on
+    # PATH here), the point is that failure isn't this new check.
+    monkeypatch.setattr(vm, "find_qemu", lambda arch: (_ for _ in ()).throw(FileNotFoundError("nope")))
+    with pytest.raises(FileNotFoundError):
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso=None, kernel="whatever", append="console=ttyS0", initrd="whatever-initrd",
+            disk=None, extra_args=None,
+        )
+
+
+def test_boot_does_not_create_workdir_for_append_without_kernel(monkeypatch):
+    created = _track_mkdtemp(monkeypatch)
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append="console=ttyS0", initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    assert created == []
+
+
 @pytest.mark.parametrize("extra_args", ['-device foo "bar', "'unterminated"])
 def test_boot_rejects_malformed_extra_args(extra_args):
     # Regression test: shlex.split() raises a raw ValueError (not caught

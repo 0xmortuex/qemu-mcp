@@ -105,7 +105,10 @@ def qemu_boot(
     temp directory and is passed to QEMU's -name flag).
     Provide at least one of: iso (bootable CD image), kernel (multiboot/bzImage,
     optionally with append/initrd), or disk (raw or qcow2 disk image, auto-detected;
-    qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). Each of iso,
+    qcow2 is required for qemu_snapshot_save/qemu_snapshot_load). append/initrd
+    require kernel to also be given - QEMU itself rejects -append/-initrd
+    without -kernel, so this is checked up front with a clear ValueError.
+    Each of iso,
     kernel, initrd, and disk, if given, must already exist on disk - qemu_boot
     checks with a clear FileNotFoundError naming the param and path before any
     QEMU process starts, rather than letting a typo surface later as an opaque
