@@ -552,7 +552,7 @@ def qemu_version(arch: str = "x86_64") -> str:
 # workdir and serial log (see qemu_serial).
 @tool(read_only=False, destructive=True, idempotent=True, open_world=False)
 def qemu_list() -> str:
-    """List all VMs managed by this server, with arch, machine, pid, uptime, and state.
+    """List all VMs managed by this server, with arch, machine, hostfwd, pid, uptime, and state.
 
     A VM that exited on its own (guest panic, or `quit` via qemu_qmp) is
     shown here once as exited(...), then reaped - its workdir and handles
@@ -565,8 +565,9 @@ def qemu_list() -> str:
     for vm in vms:
         state = "running" if vm.running else f"exited({vm.proc.returncode})"
         machine_note = f" -M {vm.machine}" if vm.machine else ""
+        hostfwd_note = f", hostfwd={vm.hostfwd}" if vm.hostfwd else ""
         rows.append(
-            f"{vm.name}: {state}, {vm.arch}{machine_note}, pid {vm.proc.pid}, "
+            f"{vm.name}: {state}, {vm.arch}{machine_note}{hostfwd_note}, pid {vm.proc.pid}, "
             f"up {int(time.monotonic() - vm.started_at)}s, "
             f"serial {os.path.getsize(vm.serial_path) if os.path.isfile(vm.serial_path) else 0} bytes"
         )

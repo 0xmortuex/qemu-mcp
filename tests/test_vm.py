@@ -705,7 +705,7 @@ class _FakeSerial:
         pass
 
 
-def _register_fake_vm(name, workdir, arch="x86_64", machine=None):
+def _register_fake_vm(name, workdir, arch="x86_64", machine=None, hostfwd=None):
     fake = vm.VM(
         name=name,
         proc=_FakeProc(),
@@ -717,6 +717,7 @@ def _register_fake_vm(name, workdir, arch="x86_64", machine=None):
         cmdline=["qemu-system-x86_64"],
         arch=arch,
         machine=machine,
+        hostfwd=hostfwd,
     )
     vm._vms[name] = fake
     return fake
@@ -1104,6 +1105,38 @@ def test_qemu_list_omits_machine_note_when_unset(tmp_path):
     line = next(r for r in rows.splitlines() if r.startswith("list-test2:"))
     assert "x86_64" in line
     assert "-M" not in line
+
+
+def test_qemu_list_reports_hostfwd(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-list-test3"
+    workdir.mkdir()
+    _register_fake_vm("list-test3", workdir, hostfwd="tcp::2222-:22")
+
+    try:
+        rows = server.qemu_list()
+    finally:
+        vm._vms.pop("list-test3", None)
+
+    line = next(r for r in rows.splitlines() if r.startswith("list-test3:"))
+    assert "hostfwd=tcp::2222-:22" in line
+
+
+def test_qemu_list_omits_hostfwd_note_when_unset(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-list-test4"
+    workdir.mkdir()
+    _register_fake_vm("list-test4", workdir, hostfwd=None)
+
+    try:
+        rows = server.qemu_list()
+    finally:
+        vm._vms.pop("list-test4", None)
+
+    line = next(r for r in rows.splitlines() if r.startswith("list-test4:"))
+    assert "hostfwd" not in line
 
 
 def test_qemu_list_shows_an_exited_vm_once_then_reaps_it(tmp_path):

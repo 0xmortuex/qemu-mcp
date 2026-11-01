@@ -29,6 +29,7 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `qemu_version` — report the installed QEMU's `--version` for a given
   arch, without booting a VM.
 - `arch` and `machine` shown per-VM in `qemu_list` output.
+- `hostfwd` (if set at boot) shown per-VM in `qemu_list` output.
 - Overridable QMP connect/read timeouts (`qmp_connect_timeout_s`,
   `qmp_read_timeout_s`) on `qemu_boot`.
 - `poll_interval_s` parameter on `qemu_wait_serial` (already present on

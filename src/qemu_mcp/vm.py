@@ -287,6 +287,7 @@ class VM:
     cmdline: list[str]
     arch: str
     machine: str | None = None
+    hostfwd: str | None = None
     started_at: float = field(default_factory=time.monotonic)
     # Serial-log byte offset just past the last qemu_wait_serial match, so
     # the next wait only sees new output (e.g. the prompt after a command).
@@ -632,6 +633,7 @@ def boot(
                     name=name, proc=proc, qmp=qmp, workdir=workdir,
                     serial_path=serial_path, serial_console=SerialConsole(serial_port),
                     qemu_log=qemu_log, cmdline=args, arch=arch, machine=machine,
+                    hostfwd=hostfwd,
                 )
                 with _vms_lock:
                     _vms[name] = vm
