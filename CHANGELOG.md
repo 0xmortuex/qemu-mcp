@@ -175,3 +175,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `SerialConsole.send()`'s reconnect path closed the dead socket without
   guarding against `close()` itself raising `OSError`, which could escape
   uncaught and skip clearing the stale socket reference for the next call.
+- `qemu_boot`'s `hostfwd` host port had no pre-flight collision check,
+  unlike the QMP/serial ports `vm.boot()` allocates itself; a port already
+  in use (by another VM's `hostfwd` or an unrelated process) surfaced only
+  as QEMU's own confusing bind-failure buried in "QEMU exited immediately"
+  output. The port is now probed with a bind attempt before QEMU is
+  launched, raising a clear `ValueError` naming the port instead.

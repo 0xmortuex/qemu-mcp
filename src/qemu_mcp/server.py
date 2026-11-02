@@ -168,6 +168,11 @@ def qemu_boot(
     exact netdev hostfwd's own NIC uses (id=net0 / netdev=net0) - extra_args
     can add an unrelated NIC (e.g. for testing a guest driver) freely, but
     reusing id=net0 or pointing a -device at netdev=net0 is rejected.
+    hostfwd's host port is probed pre-flight (a bind attempt on that exact
+    port/address) so a collision - two VMs sharing a hostfwd port, or an
+    unrelated process already bound to it - raises a clear ValueError
+    naming the port instead of surfacing as QEMU's own confusing
+    bind-failure output through the generic "QEMU exited immediately" path.
     qmp_connect_timeout_s bounds how long to retry connecting to QEMU's QMP
     socket after launch (raise it on a slow/loaded host where QEMU's first
     launch is slow, e.g. under AV scanning). qmp_read_timeout_s bounds how

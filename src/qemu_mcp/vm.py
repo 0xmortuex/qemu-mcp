@@ -167,7 +167,35 @@ _SERIAL_BACKEND = f"chardev:{_SERIAL_CHARDEV_ID}"
 # netdev=net0 actually collides - see _extra_args_hostfwd_conflict below.
 _HOSTFWD_NETDEV_ID = "net0"
 _HOSTFWD_NIC_MODEL = "e1000"
-_HOSTFWD_RE = re.compile(r"^(?:(?:tcp|udp):)?[\w.]*:\d+-[\w.]*:\d+$")
+_HOSTFWD_RE = re.compile(
+    r"^(?:(?P<proto>tcp|udp):)?(?P<hostaddr>[\w.]*):(?P<hostport>\d+)-[\w.]*:\d+$"
+)
+
+
+def _check_hostfwd_port_free(hostfwd_match: re.Match[str]) -> None:
+    """Pre-flight collision probe for qemu_boot's hostfwd host port.
+
+    Unlike the QMP/serial ports vm.boot() allocates itself (_free_port()
+    binds an ephemeral socket to confirm the OS considers it free), the
+    hostfwd host port is a literal value the caller supplies and goes
+    straight onto the QEMU command line unchecked. Probing it the same way
+    turns a collision (two VMs sharing a hostfwd port, or some unrelated
+    process already bound to it) into a clear ValueError naming the port
+    instead of QEMU's own bind-failure output surfacing through the
+    generic "QEMU exited immediately" path.
+    """
+    proto = hostfwd_match.group("proto") or "tcp"
+    hostaddr = hostfwd_match.group("hostaddr") or "0.0.0.0"
+    hostport = int(hostfwd_match.group("hostport"))
+    sock_type = socket.SOCK_DGRAM if proto == "udp" else socket.SOCK_STREAM
+    try:
+        with socket.socket(socket.AF_INET, sock_type) as s:
+            s.bind((hostaddr, hostport))
+    except OSError as e:
+        raise ValueError(
+            f"hostfwd host port {hostport} ({proto}) is not available on "
+            f"{hostaddr!r}: {e}"
+        ) from e
 
 
 def _extra_args_hostfwd_conflict(extra_argv: list[str]) -> str | None:
@@ -492,11 +520,14 @@ def boot(
             raise ValueError(
                 f"invalid {_topology_name} {_topology_val!r}: must be a positive integer"
             )
-    if hostfwd is not None and not _HOSTFWD_RE.match(hostfwd):
-        raise ValueError(
-            f"invalid hostfwd {hostfwd!r}: must look like QEMU's hostfwd rule "
-            "(e.g. \"tcp::2222-:22\"), i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
-        )
+    hostfwd_match: re.Match[str] | None = None
+    if hostfwd is not None:
+        hostfwd_match = _HOSTFWD_RE.match(hostfwd)
+        if hostfwd_match is None:
+            raise ValueError(
+                f"invalid hostfwd {hostfwd!r}: must look like QEMU's hostfwd rule "
+                "(e.g. \"tcp::2222-:22\"), i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
+            )
     if (append or initrd) and not kernel:
         culprit = "append" if append else "initrd"
         raise ValueError(
@@ -545,6 +576,9 @@ def boot(
                 raise FileNotFoundError(f"{label} not found: {p}")
 
         qemu = find_qemu(arch)
+
+        if hostfwd_match is not None:
+            _check_hostfwd_port_free(hostfwd_match)
 
         last_error: RuntimeError | None = None
         for _attempt in range(_MAX_PORT_CONFLICT_RETRIES):

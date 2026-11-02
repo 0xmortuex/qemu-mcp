@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -361,6 +362,63 @@ def test_boot_does_not_create_workdir_for_malformed_hostfwd(monkeypatch):
         assert False, "expected ValueError"
     except ValueError:
         pass
+    assert created == []
+
+
+def test_check_hostfwd_port_free_passes_when_port_is_free():
+    # Grab a definitely-free ephemeral port, then release it immediately -
+    # same tiny TOCTOU window _free_port() itself already has.
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    match = vm._HOSTFWD_RE.match(f"tcp:127.0.0.1:{port}-:22")
+    vm._check_hostfwd_port_free(match)  # must not raise
+
+
+def test_check_hostfwd_port_free_rejects_tcp_port_in_use():
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        port = occupied.getsockname()[1]
+        match = vm._HOSTFWD_RE.match(f"tcp:127.0.0.1:{port}-:22")
+        try:
+            vm._check_hostfwd_port_free(match)
+            assert False, "expected ValueError"
+        except ValueError as e:
+            assert str(port) in str(e)
+
+
+def test_check_hostfwd_port_free_rejects_udp_port_in_use():
+    # proto defaults to tcp, so a udp collision must be checked against a
+    # udp-bound socket, not tcp - confirms the proto group is actually used.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        port = occupied.getsockname()[1]
+        match = vm._HOSTFWD_RE.match(f"udp:127.0.0.1:{port}-:53")
+        try:
+            vm._check_hostfwd_port_free(match)
+            assert False, "expected ValueError"
+        except ValueError as e:
+            assert str(port) in str(e)
+
+
+def test_boot_rejects_hostfwd_port_collision_without_creating_a_workdir(monkeypatch, tmp_path):
+    monkeypatch.setattr(vm, "find_qemu", lambda arch: "/nonexistent/qemu-system-x86_64")
+    created = _track_mkdtemp(monkeypatch)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        port = occupied.getsockname()[1]
+        try:
+            vm.boot(
+                name="valid-name", arch="x86_64", memory_mb=64,
+                iso=str(iso), kernel=None, append=None, initrd=None,
+                disk=None, extra_args=None, hostfwd=f"tcp:127.0.0.1:{port}-:22",
+            )
+            assert False, "expected ValueError"
+        except ValueError as e:
+            assert str(port) in str(e)
     assert created == []
 
 
