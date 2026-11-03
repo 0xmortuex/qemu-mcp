@@ -553,6 +553,27 @@ def qemu_version(arch: str = "x86_64") -> str:
     return vmmod.version(arch)
 
 
+# Not destructive: refuses to overwrite an existing path instead of
+# clobbering it. Not idempotent: a second call with the same path fails
+# (the file now exists) rather than being a no-op.
+@tool(read_only=False, destructive=False, idempotent=False, open_world=False)
+def qemu_disk_create(path: str, size: str, format: str = "qcow2") -> str:
+    """Create a fresh disk image via `qemu-img create`, ready for qemu_boot's `disk` param.
+
+    qemu_boot never creates a disk image itself - `disk` must already
+    point at an existing file. This closes that gap: create one here,
+    then boot straight into it.
+
+    size looks like qemu-img's own size grammar: a number optionally
+    suffixed with k/K/M/G/T/P/E, e.g. "10G" or "512M". format must be
+    "qcow2" (default - needed for qemu_snapshot_save/qemu_snapshot_load)
+    or "raw" - qemu_boot's disk_format() auto-detection only tells these
+    two apart, so any other qemu-img format would silently be treated as
+    raw. Fails if path already exists, rather than overwriting it.
+    """
+    return vmmod.disk_create(path, size, format)
+
+
 # Not read-only: it reaps VMs that exited on their own, deleting their
 # workdir and serial log (see qemu_serial).
 @tool(read_only=False, destructive=True, idempotent=True, open_world=False)

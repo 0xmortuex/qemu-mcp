@@ -149,6 +149,83 @@ def test_disk_format_missing_file_defaults_to_raw(tmp_path):
     assert vm.disk_format(str(tmp_path / "does-not-exist.img")) == "raw"
 
 
+def test_find_qemu_img_finds_exact_match_on_path(tmp_path, monkeypatch):
+    path = _make_fake_binary(tmp_path, "qemu-img")
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert os.path.normcase(vm.find_qemu_img()) == os.path.normcase(path)
+
+
+def test_find_qemu_img_missing_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    with pytest.raises(FileNotFoundError, match="qemu-img"):
+        vm.find_qemu_img()
+
+
+def test_find_qemu_img_falls_back_to_windows_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm.sys, "platform", "win32")
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setenv("QEMU_DIR", str(tmp_path))
+    exe = tmp_path / "qemu-img.exe"
+    exe.write_text("")
+
+    assert vm.find_qemu_img() == str(exe)
+
+
+@pytest.mark.parametrize("bad_format", ["vmdk", "vdi", "qed", "", "QCOW2"])
+def test_disk_create_rejects_invalid_format(tmp_path, bad_format):
+    with pytest.raises(ValueError, match="format"):
+        vm.disk_create(str(tmp_path / "disk.img"), "1G", format=bad_format)
+
+
+@pytest.mark.parametrize("bad_size", ["", "ten gigs", "-5G", "5X", "1.2.3G"])
+def test_disk_create_rejects_invalid_size(tmp_path, bad_size):
+    with pytest.raises(ValueError, match="size"):
+        vm.disk_create(str(tmp_path / "disk.img"), bad_size)
+
+
+@pytest.mark.parametrize("good_size", ["1024", "512M", "10G", "2.5G", "1T"])
+def test_disk_create_accepts_well_formed_sizes(tmp_path, monkeypatch, good_size):
+    # Format/size validation happens before find_qemu_img() is ever called -
+    # an empty PATH proves these sizes get past the regex, not that a real
+    # image was created.
+    monkeypatch.setenv("PATH", "")
+    with pytest.raises(FileNotFoundError, match="qemu-img"):
+        vm.disk_create(str(tmp_path / "disk.img"), good_size)
+
+
+def test_disk_create_refuses_to_overwrite_existing_path(tmp_path):
+    existing = tmp_path / "disk.img"
+    existing.write_bytes(b"not a real disk")
+
+    with pytest.raises(FileExistsError, match=str(existing)):
+        vm.disk_create(str(existing), "1G")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_disk_create_runs_qemu_img_and_returns_its_output(tmp_path, monkeypatch):
+    _make_fake_qemu_img_script(tmp_path, 'echo "fmt=$3 size=$5"; : > "$4"')
+    monkeypatch.setenv("PATH", str(tmp_path))
+    disk = tmp_path / "new.qcow2"
+
+    out = vm.disk_create(str(disk), "2G", format="qcow2")
+
+    assert out == "fmt=qcow2 size=2G"
+    assert disk.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_disk_create_wraps_a_qemu_img_failure(tmp_path, monkeypatch):
+    _make_fake_qemu_img_script(tmp_path, 'echo "qemu-img: error: disk full" >&2; exit 1')
+    monkeypatch.setenv("PATH", str(tmp_path))
+    disk = tmp_path / "new.qcow2"
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        vm.disk_create(str(disk), "2G")
+    assert not disk.exists()
+
+
 @pytest.mark.parametrize("name", ["", "foo/bar", "foo\\bar", ".", ".."])
 def test_boot_rejects_invalid_names(name):
     try:
@@ -1747,6 +1824,15 @@ def _make_fake_qemu_script(directory, body):
     """A fake qemu-system-x86_64 that runs `body` instead of real QEMU."""
     name = "qemu-system-x86_64"
     path = os.path.join(directory, name)
+    with open(path, "w") as f:
+        f.write(f"#!/bin/sh\n{body}\n")
+    os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
+    return path
+
+
+def _make_fake_qemu_img_script(directory, body):
+    """A fake qemu-img that runs `body` instead of real qemu-img."""
+    path = os.path.join(directory, "qemu-img")
     with open(path, "w") as f:
         f.write(f"#!/bin/sh\n{body}\n")
     os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)

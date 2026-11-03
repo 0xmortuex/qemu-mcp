@@ -63,6 +63,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `qemu_key` now accepts `sysrq` as a key name, to send the Linux Magic
   SysRq key (e.g. `alt-sysrq-s`/`alt-sysrq-c` to sync disks or force a
   crash dump on a guest kernel built with `CONFIG_MAGIC_SYSRQ`).
+- `qemu_disk_create` — create a fresh disk image via `qemu-img create`
+  (`format` `"qcow2"`/`"raw"`, `size` like `"10G"`/`"512M"`), ready for
+  `qemu_boot`'s `disk` param, since `qemu_boot` never creates one itself.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match
