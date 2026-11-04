@@ -391,6 +391,34 @@ def qemu_snapshot_list(name: str) -> str:
     return text if text else "(no snapshot info returned)"
 
 
+# Ejecting/inserting media is a real state change, but doing it again with
+# the same path leaves the drive in the same end state either way.
+@tool(read_only=False, destructive=True, idempotent=True, open_world=False)
+def qemu_change_media(
+    name: str, device: str, path: str, format: str | None = None, force: bool = False,
+) -> str:
+    """Swap the medium in a removable drive (e.g. a CD-ROM) without rebooting.
+
+    device is the block backend's id or QOM path, as shown by
+    qemu_qmp(name, "query-block")'s "qdev" field - qemu-mcp can't guess it
+    for you, since it depends on the machine type/QEMU version and whether
+    the drive was given an explicit id (qemu_boot's iso/disk params don't
+    set one). path must already exist. format defaults to auto-probing the
+    new image. force=True ejects even a drive the guest has locked (its
+    tray "closed" on the medium); the default refuses in that case instead
+    of surprising the guest. Wraps QMP blockdev-change-medium.
+    """
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"path not found: {path}")
+    vm = vmmod.get_vm(name)
+    arguments: dict[str, Any] = {"id": device, "filename": path, "force": force}
+    if format:
+        arguments["format"] = format
+    with vmmod.in_use(name):
+        vm.qmp.command("blockdev-change-medium", **arguments)
+    return f"changed media on {device!r} (VM {name!r}) to {path!r}"
+
+
 @tool(read_only=True, destructive=False, idempotent=True, open_world=False)
 def qemu_serial(name: str, tail_lines: int = 50) -> str:
     """Read the tail of the VM's serial console output (COM1).

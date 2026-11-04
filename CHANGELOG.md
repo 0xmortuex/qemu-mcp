@@ -66,6 +66,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `qemu_disk_create` — create a fresh disk image via `qemu-img create`
   (`format` `"qcow2"`/`"raw"`, `size` like `"10G"`/`"512M"`), ready for
   `qemu_boot`'s `disk` param, since `qemu_boot` never creates one itself.
+- `qemu_change_media` — swap a removable drive's medium live via QMP
+  `blockdev-change-medium`, without a `qemu_stop`+`qemu_boot` cycle. Needs
+  the drive's block-backend id/QOM path (from `qemu_qmp(name,
+  "query-block")`), since that id isn't guessable ahead of time.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

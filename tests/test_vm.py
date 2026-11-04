@@ -1580,6 +1580,108 @@ def test_qemu_qmp_marks_the_vm_in_use_while_it_runs(tmp_path):
         vm._vms.pop("qmp-inuse-test", None)
 
 
+def test_qemu_change_media_rejects_a_missing_path(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-changemedia-missing"
+    workdir.mkdir()
+    fake = _register_fake_vm("changemedia-missing", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _RecordingQMP({})
+    missing = str(tmp_path / "no-such.iso")
+
+    try:
+        with pytest.raises(FileNotFoundError) as exc_info:
+            server.qemu_change_media(name="changemedia-missing", device="ide1-cd0", path=missing)
+    finally:
+        vm._vms.pop("changemedia-missing", None)
+
+    assert missing in str(exc_info.value)
+    assert fake.qmp.calls == [], "must fail before ever touching QMP"
+
+
+def test_qemu_change_media_passes_id_filename_and_force_to_qmp(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-changemedia-ok"
+    workdir.mkdir()
+    fake = _register_fake_vm("changemedia-ok", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _RecordingQMP({})
+    disk = tmp_path / "new.iso"
+    disk.write_bytes(b"iso")
+
+    try:
+        out = server.qemu_change_media(name="changemedia-ok", device="ide1-cd0", path=str(disk))
+    finally:
+        vm._vms.pop("changemedia-ok", None)
+
+    assert fake.qmp.calls == [
+        ("blockdev-change-medium", {"id": "ide1-cd0", "filename": str(disk), "force": False})
+    ]
+    assert "ide1-cd0" in out and str(disk) in out
+
+
+def test_qemu_change_media_passes_format_and_force_when_given(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-changemedia-format"
+    workdir.mkdir()
+    fake = _register_fake_vm("changemedia-format", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _RecordingQMP({})
+    disk = tmp_path / "new.qcow2"
+    disk.write_bytes(b"qcow2")
+
+    try:
+        server.qemu_change_media(
+            name="changemedia-format", device="scsi0-0-0", path=str(disk),
+            format="qcow2", force=True,
+        )
+    finally:
+        vm._vms.pop("changemedia-format", None)
+
+    assert fake.qmp.calls == [
+        ("blockdev-change-medium",
+         {"id": "scsi0-0-0", "filename": str(disk), "force": True, "format": "qcow2"})
+    ]
+
+
+class _AssertsInUseChangeMediaQMP(_FakeQMP):
+    """command() 'succeeds' while recording whether vm._in_use shows the
+    caller as registered at the moment it's called - same proof-of-wiring
+    shape as _AssertsInUseRawQMP above, for qemu_change_media."""
+
+    def __init__(self, vm_name):
+        self.vm_name = vm_name
+        self.observed_in_use = None
+
+    def command(self, name, **kwargs):
+        self.observed_in_use = vm._in_use.get(self.vm_name, 0)
+        return {}
+
+
+def test_qemu_change_media_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-changemedia-inuse"
+    workdir.mkdir()
+    fake = _register_fake_vm("changemedia-inuse", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseChangeMediaQMP("changemedia-inuse")
+    disk = tmp_path / "new.iso"
+    disk.write_bytes(b"iso")
+
+    try:
+        server.qemu_change_media(name="changemedia-inuse", device="ide1-cd0", path=str(disk))
+        assert fake.qmp.observed_in_use == 1
+        assert "changemedia-inuse" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("changemedia-inuse", None)
+
+
 class _HMPQMP(_FakeQMP):
     """human-monitor-command returns whatever text the fake HMP command prints."""
 

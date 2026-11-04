@@ -30,6 +30,7 @@ HINTS = {
     "qemu_snapshot_load":   (False,    True,       True,      False),
     "qemu_snapshot_delete": (False,    True,       True,      False),
     "qemu_snapshot_list":   (True,     False,      True,      False),
+    "qemu_change_media":    (False,    True,       True,      False),
     "qemu_serial":          (True,     False,      True,      False),
     "qemu_serial_send":     (False,    True,       False,     False),
     "qemu_wait_serial":     (True,     False,      False,     False),

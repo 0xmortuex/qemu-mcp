@@ -24,6 +24,7 @@ EXPECTED_TOOLS = {
     "qemu_snapshot_load",
     "qemu_snapshot_delete",
     "qemu_snapshot_list",
+    "qemu_change_media",
     "qemu_serial",
     "qemu_serial_send",
     "qemu_wait_serial",

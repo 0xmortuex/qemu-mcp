@@ -41,6 +41,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_snapshot_load` | Restore a VM to a previously saved snapshot tag. Reports failure if QEMU's loadvm rejects it (e.g. an unknown tag) instead of claiming success |
 | `qemu_snapshot_delete` | Delete a previously saved snapshot tag, freeing its space in the qcow2 disk. Reports failure if QEMU's delvm rejects it (e.g. an unknown tag) instead of claiming success |
 | `qemu_snapshot_list` | List snapshot tags saved on the VM's qcow2 disk (raw `info snapshots` output), so you can see what's available before loading or deleting one |
+| `qemu_change_media` | Swap the medium in a removable drive (e.g. a CD-ROM) without rebooting. `device` is the block backend's id/QOM path, found via `qemu_qmp(name, "query-block")` — not guessable, since it depends on the machine type/QEMU version |
 | `qemu_serial` | Tail the serial console (COM1) output — works after the VM has exited too, to see what it printed right before dying |
 | `qemu_serial_send` | Write text to the serial console (COM1) |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout. Each wait only searches output after the previous match, so waiting for a prompt after a command finds the new one (`from_start=True` searches the whole log) |
@@ -255,7 +256,7 @@ qcow2 disk image (booted as a second VM alongside the ISO one).
 - VMs run headless (`-display none`); screenshots still work because QEMU keeps rendering the VGA framebuffer.
 - Serial output requires the guest to write to COM1 (most hobby kernels and all Linux `console=ttyS0` setups do). Guests that only draw to VGA are still fully drivable via screenshots + keys.
 - `qemu_stop` tries ACPI powerdown first; hobby kernels usually ignore it and get killed after a grace period — use `force=true` to skip the wait, or raise `graceful_timeout_s` (default 10s) for a guest that legitimately needs longer to shut down cleanly.
-- `qemu_stop` waits briefly (up to 5s, best-effort) for any in-flight `qemu_wait_serial`/`qemu_wait_screen`/`qemu_screenshot`/`qemu_serial_send`/`qemu_qmp` call against the same VM to finish before closing its QMP/serial connections and removing its temp directory, so a call racing a concurrent stop sees a clean result instead of an error from a handle closed out from under it.
+- `qemu_stop` waits briefly (up to 5s, best-effort) for any in-flight `qemu_wait_serial`/`qemu_wait_screen`/`qemu_screenshot`/`qemu_serial_send`/`qemu_qmp`/`qemu_change_media` call against the same VM to finish before closing its QMP/serial connections and removing its temp directory, so a call racing a concurrent stop sees a clean result instead of an error from a handle closed out from under it.
 - This server launches QEMU processes on your machine with files you point it at. `extra_args` is passed to QEMU verbatim — same trust level as running QEMU yourself.
 
 ## Changelog
