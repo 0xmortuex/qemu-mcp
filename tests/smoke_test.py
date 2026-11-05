@@ -6,8 +6,10 @@ Needs a bootable image. Point QEMU_MCP_TEST_ISO at any bootable ISO
     QEMU_MCP_TEST_ISO=path/to/os.iso python tests/smoke_test.py
 
 qemu_snapshot_save/qemu_snapshot_list/qemu_snapshot_load/qemu_snapshot_delete
-need a qcow2 disk instead of an ISO, so they're only exercised if
-QEMU_MCP_TEST_QCOW2 is also set, against a second VM booted from that disk:
+need a qcow2 disk instead of an ISO. By default one is created for this run
+via qemu_disk_create (blank - savevm/loadvm snapshot RAM+device state, not
+disk content, so a real OS on it isn't needed); set QEMU_MCP_TEST_QCOW2 to
+use a specific disk instead (e.g. one with a real OS already installed):
 
     QEMU_MCP_TEST_ISO=path/to/os.iso QEMU_MCP_TEST_QCOW2=path/to/disk.qcow2 \\
         python tests/smoke_test.py
@@ -16,8 +18,10 @@ Calls the tool functions directly (no MCP transport) - transport is the
 SDK's job; this verifies the QEMU/QMP plumbing on your machine.
 """
 
+import json
 import os
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -31,6 +35,7 @@ if not ISO:
 ARCH = os.environ.get("QEMU_MCP_TEST_ARCH", "x86_64")
 OUT = os.environ.get("QEMU_MCP_TEST_SHOT", os.path.join(os.path.dirname(__file__), "smoke.png"))
 DISK = os.environ.get("QEMU_MCP_TEST_QCOW2")  # optional: a qcow2 disk, to also exercise snapshots
+CREATED_DISK = None  # set below if DISK wasn't given, so it can be cleaned up at the end
 
 print(server.qemu_version(arch=ARCH))
 
@@ -60,6 +65,18 @@ print(f"screenshot 2: {len(shot2.data)} bytes")
 print(server.qemu_mouse(name="smoke", x=0.5, y=0.5))
 print(server.qemu_mouse(name="smoke", x=0.3, y=0.3, button="left"))
 
+# qemu_change_media needs the CD-ROM's block-backend id, which isn't
+# guessable ahead of time (depends on machine type/QEMU version) - find it
+# via query-block instead of hardcoding one, same as a real caller would.
+block_info = json.loads(server.qemu_qmp(name="smoke", command="query-block"))
+cdrom = next((b for b in block_info if b.get("removable") and b.get("qdev")), None)
+if cdrom:
+    # Swap the same ISO back in - exercises the eject+reinsert path without
+    # needing a second image file just for this smoke test.
+    print(server.qemu_change_media(name="smoke", device=cdrom["qdev"], path=ISO, force=True))
+else:
+    print("skipping qemu_change_media: no removable block device found via query-block")
+
 # Marker is arbitrary and unlikely to appear - exercises the timeout path
 # without assuming anything about what this particular ISO prints.
 print(server.qemu_wait_serial(name="smoke", text="qemu-mcp-smoke-marker", timeout_s=2))
@@ -71,17 +88,20 @@ print(server.qemu_qmp(name="smoke", command="query-status"))
 print(server.qemu_stop(name="smoke", force=True))
 print(server.qemu_list())
 
-if DISK:
-    print(server.qemu_boot(name="smoke-snap", disk=DISK, arch=ARCH, memory_mb=256))
-    print(server.qemu_snapshot_save(name="smoke-snap", tag="smoke-tag"))
-    print(server.qemu_snapshot_list(name="smoke-snap"))
-    print(server.qemu_snapshot_load(name="smoke-snap", tag="smoke-tag"))
-    print(server.qemu_snapshot_delete(name="smoke-snap", tag="smoke-tag"))
-    print(server.qemu_stop(name="smoke-snap", force=True))
-else:
-    print(
-        "skipping qemu_snapshot_save/qemu_snapshot_list/qemu_snapshot_load/"
-        "qemu_snapshot_delete: set QEMU_MCP_TEST_QCOW2 to a qcow2 disk to exercise them"
-    )
+if not DISK:
+    CREATED_DISK = os.path.join(tempfile.mkdtemp(prefix="qemu-mcp-smoke-"), "smoke.qcow2")
+    print(server.qemu_disk_create(path=CREATED_DISK, size="64M"))
+    DISK = CREATED_DISK
+
+print(server.qemu_boot(name="smoke-snap", disk=DISK, arch=ARCH, memory_mb=256))
+print(server.qemu_snapshot_save(name="smoke-snap", tag="smoke-tag"))
+print(server.qemu_snapshot_list(name="smoke-snap"))
+print(server.qemu_snapshot_load(name="smoke-snap", tag="smoke-tag"))
+print(server.qemu_snapshot_delete(name="smoke-snap", tag="smoke-tag"))
+print(server.qemu_stop(name="smoke-snap", force=True))
+
+if CREATED_DISK:
+    os.remove(CREATED_DISK)
+    os.rmdir(os.path.dirname(CREATED_DISK))
 
 print("SMOKE OK")
