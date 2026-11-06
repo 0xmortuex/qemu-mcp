@@ -1832,6 +1832,98 @@ def test_qemu_snapshot_list_reports_placeholder_on_empty_hmp_output(tmp_path):
     assert out == "(no snapshot info returned)"
 
 
+class _AssertsInUseHMPQMP(_FakeQMP):
+    """Like _HMPQMP, but records whether vm._in_use shows the caller as
+    registered at the moment command() is called - same proof-of-wiring
+    shape as _AssertsInUseQMP/_AssertsInUseRawQMP, for the four snapshot
+    tools, which didn't hold vm.in_use() at all until this fix."""
+
+    def __init__(self, vm_name, output=""):
+        self.vm_name = vm_name
+        self.output = output
+        self.observed_in_use = None
+
+    def command(self, name, **kwargs):
+        self.observed_in_use = vm._in_use.get(self.vm_name, 0)
+        return self.output
+
+
+def test_qemu_snapshot_save_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-save-inuse"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-save-inuse", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseHMPQMP("snap-save-inuse")
+
+    try:
+        server.qemu_snapshot_save(name="snap-save-inuse", tag="clean-boot")
+        assert fake.qmp.observed_in_use == 1
+        assert "snap-save-inuse" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("snap-save-inuse", None)
+
+
+def test_qemu_snapshot_load_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-load-inuse"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-load-inuse", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseHMPQMP("snap-load-inuse")
+
+    try:
+        server.qemu_snapshot_load(name="snap-load-inuse", tag="clean-boot")
+        assert fake.qmp.observed_in_use == 1
+        assert "snap-load-inuse" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("snap-load-inuse", None)
+
+
+def test_qemu_snapshot_delete_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-delete-inuse"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-delete-inuse", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseHMPQMP("snap-delete-inuse")
+
+    try:
+        server.qemu_snapshot_delete(name="snap-delete-inuse", tag="clean-boot")
+        assert fake.qmp.observed_in_use == 1
+        assert "snap-delete-inuse" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("snap-delete-inuse", None)
+
+
+def test_qemu_snapshot_list_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-snap-list-inuse"
+    workdir.mkdir()
+    fake = _register_fake_vm("snap-list-inuse", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseHMPQMP("snap-list-inuse")
+
+    try:
+        server.qemu_snapshot_list(name="snap-list-inuse")
+        assert fake.qmp.observed_in_use == 1
+        assert "snap-list-inuse" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("snap-list-inuse", None)
+
+
 class _RecordingQMP(_FakeQMP):
     """Records the command name and kwargs it was called with, returns a fixed result."""
 
@@ -2688,6 +2780,81 @@ def test_qemu_type_rejects_negative_delay_ms():
             assert False, f"expected ValueError for delay_ms={bad!r}"
         except ValueError as e:
             assert "delay_ms" in str(e)
+
+
+class _AssertsInUseKeystrokeQMP(_FakeQMP):
+    """command() 'succeeds' while recording whether vm._in_use shows the
+    caller as registered at the moment it's called - same proof-of-wiring
+    shape as _AssertsInUseQMP/_AssertsInUseRawQMP, for qemu_type/qemu_key/
+    qemu_mouse, which didn't hold vm.in_use() at all until this fix."""
+
+    def __init__(self, vm_name):
+        self.vm_name = vm_name
+        self.observed_in_use = []
+
+    def command(self, name, **kwargs):
+        self.observed_in_use.append(vm._in_use.get(self.vm_name, 0))
+        return {}
+
+
+def test_qemu_type_marks_the_vm_in_use_while_it_runs(tmp_path):
+    # Regression test: qemu_type never held vm.in_use() while sending its
+    # per-character send-key commands, unlike qemu_serial_send/qemu_qmp -
+    # same gap, just never fixed here, found by rereading server.py fresh.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-type-inuse-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("type-inuse-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseKeystrokeQMP("type-inuse-test")
+
+    try:
+        server.qemu_type(name="type-inuse-test", text="hi", delay_ms=0)
+        assert fake.qmp.observed_in_use == [1, 1]
+        assert "type-inuse-test" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("type-inuse-test", None)
+
+
+def test_qemu_key_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-key-inuse-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("key-inuse-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseKeystrokeQMP("key-inuse-test")
+
+    try:
+        server.qemu_key(name="key-inuse-test", combo="enter")
+        assert fake.qmp.observed_in_use == [1]
+        assert "key-inuse-test" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("key-inuse-test", None)
+
+
+def test_qemu_mouse_marks_the_vm_in_use_while_it_runs(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-mouse-inuse-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("mouse-inuse-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUseKeystrokeQMP("mouse-inuse-test")
+
+    try:
+        server.qemu_mouse(name="mouse-inuse-test", x=0.5, y=0.5, button="left")
+        assert fake.qmp.observed_in_use == [1]
+        assert "mouse-inuse-test" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+    finally:
+        vm._vms.pop("mouse-inuse-test", None)
 
 
 def test_qemu_serial_rejects_non_positive_tail_lines():

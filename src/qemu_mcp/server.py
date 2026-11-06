@@ -265,12 +265,13 @@ def qemu_type(name: str, text: str, delay_ms: int = 35) -> str:
     # Translate everything first: failing on character 7 after sending 6
     # would leave a half-typed command in the guest.
     keystrokes = [keymod.char_to_keys(ch) for ch in text]
-    for qcodes in keystrokes:
-        vm.qmp.command(
-            "send-key",
-            keys=[{"type": "qcode", "data": q} for q in qcodes],
-        )
-        time.sleep(delay_ms / 1000)
+    with vmmod.in_use(name):
+        for qcodes in keystrokes:
+            vm.qmp.command(
+                "send-key",
+                keys=[{"type": "qcode", "data": q} for q in qcodes],
+            )
+            time.sleep(delay_ms / 1000)
     return f"typed {len(text)} characters into {name!r}"
 
 
@@ -286,7 +287,8 @@ def qemu_key(name: str, combo: str) -> str:
     """
     vm = vmmod.get_vm(name)
     qcodes = keymod.parse_combo(combo)
-    vm.qmp.command("send-key", keys=[{"type": "qcode", "data": q} for q in qcodes])
+    with vmmod.in_use(name):
+        vm.qmp.command("send-key", keys=[{"type": "qcode", "data": q} for q in qcodes])
     return f"pressed {combo} in {name!r}"
 
 
@@ -306,7 +308,8 @@ def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
     """
     vm = vmmod.get_vm(name)
     events = mousemod.click_events(x, y, button) if button else mousemod.move_events(x, y)
-    vm.qmp.command("input-send-event", events=events)
+    with vmmod.in_use(name):
+        vm.qmp.command("input-send-event", events=events)
     action = f"clicked {button}" if button else "moved"
     return f"{action} at ({x:.2f}, {y:.2f}) in {name!r}"
 
@@ -339,9 +342,10 @@ def qemu_snapshot_save(name: str, tag: str) -> str:
     it. tag may only contain letters, digits, '.', '_', '-'.
     """
     vm = vmmod.get_vm(name)
-    output = vm.qmp.command(
-        "human-monitor-command", **{"command-line": snapmod.save_command_line(tag)}
-    )
+    with vmmod.in_use(name):
+        output = vm.qmp.command(
+            "human-monitor-command", **{"command-line": snapmod.save_command_line(tag)}
+        )
     return _hmp_result(f"saved snapshot {tag!r} for VM {name!r}", output)
 
 
@@ -354,9 +358,10 @@ def qemu_snapshot_load(name: str, tag: str) -> str:
     Requires the same qcow2 disk the snapshot was taken on.
     """
     vm = vmmod.get_vm(name)
-    output = vm.qmp.command(
-        "human-monitor-command", **{"command-line": snapmod.load_command_line(tag)}
-    )
+    with vmmod.in_use(name):
+        output = vm.qmp.command(
+            "human-monitor-command", **{"command-line": snapmod.load_command_line(tag)}
+        )
     return _hmp_result(f"loaded snapshot {tag!r} for VM {name!r}", output)
 
 
@@ -368,9 +373,10 @@ def qemu_snapshot_delete(name: str, tag: str) -> str:
     delvm rejects it (e.g. an unknown tag) instead of claiming success.
     """
     vm = vmmod.get_vm(name)
-    output = vm.qmp.command(
-        "human-monitor-command", **{"command-line": snapmod.delete_command_line(tag)}
-    )
+    with vmmod.in_use(name):
+        output = vm.qmp.command(
+            "human-monitor-command", **{"command-line": snapmod.delete_command_line(tag)}
+        )
     return _hmp_result(f"deleted snapshot {tag!r} for VM {name!r}", output)
 
 
@@ -384,9 +390,10 @@ def qemu_snapshot_list(name: str) -> str:
     output as-is (its exact column layout isn't parsed here).
     """
     vm = vmmod.get_vm(name)
-    output = vm.qmp.command(
-        "human-monitor-command", **{"command-line": snapmod.list_command_line()}
-    )
+    with vmmod.in_use(name):
+        output = vm.qmp.command(
+            "human-monitor-command", **{"command-line": snapmod.list_command_line()}
+        )
     text = str(output).strip() if output else ""
     return text if text else "(no snapshot info returned)"
 

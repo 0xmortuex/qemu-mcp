@@ -188,3 +188,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
   as QEMU's own confusing bind-failure buried in "QEMU exited immediately"
   output. The port is now probed with a bind attempt before QEMU is
   launched, raising a clear `ValueError` naming the port instead.
+- `qemu_type`/`qemu_key`/`qemu_mouse`/`qemu_snapshot_save`/
+  `qemu_snapshot_load`/`qemu_snapshot_delete`/`qemu_snapshot_list` never
+  marked themselves in-use, unlike `qemu_wait_serial`/`qemu_wait_screen`/
+  `qemu_screenshot`/`qemu_serial_send`/`qemu_qmp`/`qemu_change_media`; a
+  concurrent `qemu_stop` could close their connection out from under them
+  instead of waiting, the same gap already fixed for those other tools.
