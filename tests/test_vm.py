@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import socket
 import stat
@@ -199,7 +200,7 @@ def test_disk_create_refuses_to_overwrite_existing_path(tmp_path):
     existing = tmp_path / "disk.img"
     existing.write_bytes(b"not a real disk")
 
-    with pytest.raises(FileExistsError, match=str(existing)):
+    with pytest.raises(FileExistsError, match=re.escape(str(existing))):
         vm.disk_create(str(existing), "1G")
 
 
@@ -1619,7 +1620,8 @@ def test_qemu_change_media_passes_id_filename_and_force_to_qmp(tmp_path):
     assert fake.qmp.calls == [
         ("blockdev-change-medium", {"id": "ide1-cd0", "filename": str(disk), "force": False})
     ]
-    assert "ide1-cd0" in out and str(disk) in out
+    # The tool formats the path with !r, which doubles backslashes on Windows.
+    assert "ide1-cd0" in out and repr(str(disk)) in out
 
 
 def test_qemu_change_media_passes_format_and_force_when_given(tmp_path):
