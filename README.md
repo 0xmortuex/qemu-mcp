@@ -69,7 +69,7 @@ can reach anything QEMU can.
 Requirements: Python 3.10+, and [QEMU](https://www.qemu.org/download/) on your PATH (on Windows, `C:\Program Files\qemu` is found automatically, or set `QEMU_DIR`).
 
 ```bash
-pip install git+https://github.com/0xmortuex/qemu-mcp
+pip install qemu-mcp
 ```
 
 **Claude Code:**
@@ -90,7 +90,7 @@ claude mcp add qemu -- qemu-mcp
 }
 ```
 
-Or without installing, via [uv](https://docs.astral.sh/uv/): `claude mcp add qemu -- uvx --from git+https://github.com/0xmortuex/qemu-mcp qemu-mcp`
+Or without installing, via [uv](https://docs.astral.sh/uv/): `claude mcp add qemu -- uvx qemu-mcp`
 
 ## Example session
 
