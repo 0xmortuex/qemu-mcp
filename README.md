@@ -2,6 +2,8 @@
 
 **Let your AI agent boot an operating system and drive it.**
 
+<!-- mcp-name: io.github.0xmortuex/qemu-mcp -->
+
 qemu-mcp is an [MCP](https://modelcontextprotocol.io) server that gives AI agents (Claude Code, or any MCP client) hands on a QEMU virtual machine: boot an ISO or a raw kernel, press keys, take screenshots, read the serial console, and wait for boot markers — all headless, with **zero cooperation from the guest**. No SSH, no guest agent, no network. If it boots in QEMU, an agent can drive it.
 
 <p align="center">
