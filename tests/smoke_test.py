@@ -65,6 +65,13 @@ print(f"screenshot 2: {len(shot2.data)} bytes")
 print(server.qemu_mouse(name="smoke", x=0.5, y=0.5))
 print(server.qemu_mouse(name="smoke", x=0.3, y=0.3, button="left"))
 
+print(server.qemu_pause(name="smoke"))
+status = json.loads(server.qemu_qmp(name="smoke", command="query-status"))
+assert status.get("running") is False, f"expected paused, query-status said: {status}"
+print(server.qemu_resume(name="smoke"))
+status = json.loads(server.qemu_qmp(name="smoke", command="query-status"))
+assert status.get("running") is True, f"expected running after resume, query-status said: {status}"
+
 # qemu_change_media needs the CD-ROM's block-backend id, which isn't
 # guessable ahead of time (depends on machine type/QEMU version) - find it
 # via query-block instead of hardcoding one, same as a real caller would.

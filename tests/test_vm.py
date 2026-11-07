@@ -1682,6 +1682,64 @@ def test_qemu_change_media_marks_the_vm_in_use_while_it_runs(tmp_path):
         vm._vms.pop("changemedia-inuse", None)
 
 
+class _AssertsInUsePauseResumeQMP(_FakeQMP):
+    """Same proof-of-wiring shape as _AssertsInUseChangeMediaQMP, for
+    qemu_pause/qemu_resume - also records the QMP command name sent, to
+    confirm qemu_pause/qemu_resume send exactly "stop"/"cont"."""
+
+    def __init__(self, vm_name):
+        self.vm_name = vm_name
+        self.observed_in_use = None
+        self.calls = []
+
+    def command(self, name, **kwargs):
+        self.calls.append(name)
+        self.observed_in_use = vm._in_use.get(self.vm_name, 0)
+        return {}
+
+
+def test_qemu_pause_sends_stop_and_marks_the_vm_in_use(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-pause-inuse"
+    workdir.mkdir()
+    fake = _register_fake_vm("pause-inuse", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUsePauseResumeQMP("pause-inuse")
+
+    try:
+        out = server.qemu_pause(name="pause-inuse")
+        assert fake.qmp.calls == ["stop"]
+        assert fake.qmp.observed_in_use == 1
+        assert "pause-inuse" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+        assert out == "paused 'pause-inuse'"
+    finally:
+        vm._vms.pop("pause-inuse", None)
+
+
+def test_qemu_resume_sends_cont_and_marks_the_vm_in_use(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-resume-inuse"
+    workdir.mkdir()
+    fake = _register_fake_vm("resume-inuse", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _AssertsInUsePauseResumeQMP("resume-inuse")
+
+    try:
+        out = server.qemu_resume(name="resume-inuse")
+        assert fake.qmp.calls == ["cont"]
+        assert fake.qmp.observed_in_use == 1
+        assert "resume-inuse" not in vm._in_use, (
+            "must be released again once the call returns"
+        )
+        assert out == "resumed 'resume-inuse'"
+    finally:
+        vm._vms.pop("resume-inuse", None)
+
+
 class _HMPQMP(_FakeQMP):
     """human-monitor-command returns whatever text the fake HMP command prints."""
 

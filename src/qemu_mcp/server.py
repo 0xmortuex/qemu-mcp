@@ -314,6 +314,37 @@ def qemu_mouse(name: str, x: float, y: float, button: str | None = None) -> str:
     return f"{action} at ({x:.2f}, {y:.2f}) in {name!r}"
 
 
+# Pausing/resuming doesn't lose guest state (unlike qemu_stop) and ends in
+# the same place if called again, so neither is destructive.
+@tool(read_only=False, destructive=False, idempotent=True, open_world=False)
+def qemu_pause(name: str) -> str:
+    """Pause the VM's execution (QMP `stop`) without exiting QEMU.
+
+    The guest's CPUs stop running - RAM and device state stay exactly as
+    they are until qemu_resume. Useful for inspecting a VM (qemu_screenshot,
+    qemu_qmp query-*) without guest time advancing while you look, or for
+    pairing with qemu_snapshot_save to get a guaranteed-consistent
+    snapshot instead of one taken mid-instruction. qemu_stop still works
+    on a paused VM.
+    """
+    vm = vmmod.get_vm(name)
+    with vmmod.in_use(name):
+        vm.qmp.command("stop")
+    return f"paused {name!r}"
+
+
+@tool(read_only=False, destructive=False, idempotent=True, open_world=False)
+def qemu_resume(name: str) -> str:
+    """Resume a VM previously paused with qemu_pause (QMP `cont`).
+
+    A no-op (still returns success) if the VM wasn't paused.
+    """
+    vm = vmmod.get_vm(name)
+    with vmmod.in_use(name):
+        vm.qmp.command("cont")
+    return f"resumed {name!r}"
+
+
 def _hmp_result(success_message: str, output: Any) -> str:
     """Turn a human-monitor-command reply into a tool result.
 

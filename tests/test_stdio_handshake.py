@@ -20,6 +20,8 @@ EXPECTED_TOOLS = {
     "qemu_type",
     "qemu_key",
     "qemu_mouse",
+    "qemu_pause",
+    "qemu_resume",
     "qemu_snapshot_save",
     "qemu_snapshot_load",
     "qemu_snapshot_delete",

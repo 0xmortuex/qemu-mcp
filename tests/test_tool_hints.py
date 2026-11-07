@@ -26,6 +26,8 @@ HINTS = {
     "qemu_type":            (False,    True,       False,     False),
     "qemu_key":             (False,    True,       False,     False),
     "qemu_mouse":           (False,    True,       False,     False),
+    "qemu_pause":           (False,    False,      True,      False),
+    "qemu_resume":          (False,    False,      True,      False),
     "qemu_snapshot_save":   (False,    True,       False,     False),
     "qemu_snapshot_load":   (False,    True,       True,      False),
     "qemu_snapshot_delete": (False,    True,       True,      False),

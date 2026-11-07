@@ -70,6 +70,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `blockdev-change-medium`, without a `qemu_stop`+`qemu_boot` cycle. Needs
   the drive's block-backend id/QOM path (from `qemu_qmp(name,
   "query-block")`), since that id isn't guessable ahead of time.
+- `qemu_pause` / `qemu_resume` — pause/resume a VM's execution via QMP
+  `stop`/`cont`, without exiting QEMU. Previously only reachable through
+  the raw `qemu_qmp` escape hatch; now a dedicated pair, same shape as
+  `qemu_change_media` wrapping `blockdev-change-medium`.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match
