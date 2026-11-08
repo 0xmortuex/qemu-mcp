@@ -74,6 +74,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `stop`/`cont`, without exiting QEMU. Previously only reachable through
   the raw `qemu_qmp` escape hatch; now a dedicated pair, same shape as
   `qemu_change_media` wrapping `blockdev-change-medium`.
+- `qemu_list` now shows `running (paused)` for a VM paused via `qemu_pause`
+  (sourced from a `query-status` QMP call per running VM), instead of
+  being indistinguishable from a plain running VM.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

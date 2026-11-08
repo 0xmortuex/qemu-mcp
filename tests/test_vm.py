@@ -1275,6 +1275,77 @@ def test_qemu_list_omits_hostfwd_note_when_unset(tmp_path):
     assert "hostfwd" not in line
 
 
+class _QueryStatusQMP(_FakeQMP):
+    """Answers query-status with a fixed status; anything else is a test bug."""
+
+    def __init__(self, status):
+        self.status = status
+
+    def command(self, name, **kwargs):
+        if name == "query-status":
+            return {"status": self.status}
+        raise vm.QMPError(f"unexpected command in test: {name!r}")
+
+
+def test_qemu_list_notes_a_paused_vm(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-list-paused-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("list-paused-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _QueryStatusQMP("paused")
+
+    try:
+        rows = server.qemu_list()
+    finally:
+        vm._vms.pop("list-paused-test", None)
+
+    line = next(r for r in rows.splitlines() if r.startswith("list-paused-test:"))
+    assert "running (paused)" in line
+
+
+def test_qemu_list_does_not_note_a_running_vm_as_paused(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-list-running-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("list-running-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _QueryStatusQMP("running")
+
+    try:
+        rows = server.qemu_list()
+    finally:
+        vm._vms.pop("list-running-test", None)
+
+    line = next(r for r in rows.splitlines() if r.startswith("list-running-test:"))
+    assert line.startswith("list-running-test: running,")
+    assert "paused" not in line
+
+
+def test_qemu_list_falls_back_to_plain_running_when_query_status_fails(tmp_path):
+    # _FakeQMP.command always raises QMPError - stands in for a VM whose QMP
+    # connection can't answer right now (mid-command, or just dropped).
+    # qemu_list must not fail the whole listing over one VM's failed
+    # query-status call.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-list-query-fails-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("list-query-fails-test", workdir)
+    fake.proc = _RunningFakeProc()
+
+    try:
+        rows = server.qemu_list()
+    finally:
+        vm._vms.pop("list-query-fails-test", None)
+
+    line = next(r for r in rows.splitlines() if r.startswith("list-query-fails-test:"))
+    assert line.startswith("list-query-fails-test: running,")
+    assert "paused" not in line
+
+
 def test_qemu_list_shows_an_exited_vm_once_then_reaps_it(tmp_path):
     from qemu_mcp import server
 

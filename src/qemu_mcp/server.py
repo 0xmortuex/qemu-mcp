@@ -20,6 +20,7 @@ from . import mouse as mousemod
 from . import screen as screenmod
 from . import snapshot as snapmod
 from . import vm as vmmod
+from .qmp import QMPError
 from .serial import SerialError
 
 mcp = MCPServer(
@@ -649,13 +650,27 @@ def qemu_list() -> str:
     A VM that exited on its own (guest panic, or `quit` via qemu_qmp) is
     shown here once as exited(...), then reaped - its workdir and handles
     are freed before this call returns, so it won't reappear next time.
+    A VM paused with qemu_pause (QMP `stop`, not a `qemu_stop` shutdown)
+    shows as "running (paused)" instead of plain "running" - sourced from
+    a `query-status` QMP call per running VM, so a VM whose QMP connection
+    can't answer right now (mid-command, or a connection that just dropped)
+    falls back to plain "running" rather than failing the whole listing.
     """
     vms = vmmod.list_vms()
     if not vms:
         return "no VMs"
     rows = []
     for vm in vms:
-        state = "running" if vm.running else f"exited({vm.proc.returncode})"
+        if vm.running:
+            state = "running"
+            try:
+                status = vm.qmp.command("query-status")
+                if isinstance(status, dict) and status.get("status") == "paused":
+                    state = "running (paused)"
+            except QMPError:
+                pass
+        else:
+            state = f"exited({vm.proc.returncode})"
         machine_note = f" -M {vm.machine}" if vm.machine else ""
         hostfwd_note = f", hostfwd={vm.hostfwd}" if vm.hostfwd else ""
         rows.append(
