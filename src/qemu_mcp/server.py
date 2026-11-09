@@ -710,8 +710,10 @@ def qemu_stop(
 def qemu_qmp(name: str, command: str, arguments: dict[str, Any] | None = None) -> str:
     """Escape hatch: run a raw QMP command on the VM.
 
-    Examples: query-status, system_reset, memsave, device_add. See the QEMU
-    QMP reference for commands and their arguments.
+    Examples: query-status, system_reset, memsave, device_add. For `stop`/
+    `cont` specifically, prefer the dedicated qemu_pause/qemu_resume wrappers
+    instead of calling them here. See the QEMU QMP reference for commands
+    and their arguments.
     """
     vm = vmmod.get_vm(name)
     with vmmod.in_use(name):
