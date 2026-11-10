@@ -620,6 +620,27 @@ def qemu_version(arch: str = "x86_64") -> str:
     return vmmod.version(arch)
 
 
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
+def qemu_machines(arch: str = "x86_64") -> str:
+    """Report `qemu-system-<arch> -M help`'s own output: every valid qemu_boot `machine` value.
+
+    Non-x86 archs (aarch64, riscv64...) have no default machine and need
+    `machine` set explicitly on qemu_boot - this is the full list for a
+    given arch, without needing a shell to run the command yourself.
+    """
+    return vmmod.machines(arch)
+
+
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
+def qemu_cpu_models(arch: str = "x86_64") -> str:
+    """Report `qemu-system-<arch> -cpu help`'s own output: every valid qemu_boot `cpu` value.
+
+    Lists the models/features qemu_boot's `cpu` param accepts for a given
+    arch, without needing a shell to run the command yourself.
+    """
+    return vmmod.cpu_models(arch)
+
+
 # Not destructive: refuses to overwrite an existing path instead of
 # clobbering it. Not idempotent: a second call with the same path fails
 # (the file now exists) rather than being a no-op.

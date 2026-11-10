@@ -34,6 +34,8 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 |------|--------------|
 | `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code) plus optional `smp_cores`/`smp_threads`/`smp_sockets`/`smp_maxcpus` (QEMU `-smp` topology qualifiers `cores=`/`threads=`/`sockets=`/`maxcpus=` combined onto the same flag, for shaping a guest's CPU topology rather than just its total count), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), an optional `cpu` (QEMU `-cpu`, e.g. `"qemu64,+avx"`/`"max"`/`"host"`, to select or customize the emulated CPU model for testing a specific feature set), an optional `hostfwd` (QEMU's `hostfwd` rule, e.g. `"tcp::2222-:22"`, to reach a guest service like SSH from the host without needing QEMU's own NIC/chipset flags), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
 | `qemu_version` | Report the installed `qemu-system-<arch> --version` output, without booting a VM |
+| `qemu_machines` | Report `qemu-system-<arch> -M help` output: every valid `qemu_boot` `machine` value for that arch, without booting a VM |
+| `qemu_cpu_models` | Report `qemu-system-<arch> -cpu help` output: every valid `qemu_boot` `cpu` value for that arch, without booting a VM |
 | `qemu_disk_create` | Create a fresh disk image via `qemu-img create` (`format` `"qcow2"`/`"raw"`, `size` like `"10G"`), ready for `qemu_boot`'s `disk` param — `qemu_boot` never creates one itself |
 | `qemu_screenshot` | PNG of the guest's display, straight from the framebuffer |
 | `qemu_type` | Type text as keyboard input (`\n` = Enter, shifted symbols handled, tunable keystroke delay) |
@@ -58,8 +60,8 @@ Multiple named VMs can run at once.
 
 Every tool declares all four MCP behaviour hints, so your client knows which calls to
 confirm with you. Only the waiting and reading tools (`qemu_screenshot`, `qemu_serial`,
-`qemu_wait_serial`, `qemu_wait_screen`, `qemu_snapshot_list`, `qemu_version`) are
-read-only. `qemu_boot` and `qemu_list` are marked destructive because they clean up VMs
+`qemu_wait_serial`, `qemu_wait_screen`, `qemu_snapshot_list`, `qemu_version`,
+`qemu_machines`, `qemu_cpu_models`) are read-only. `qemu_boot` and `qemu_list` are marked destructive because they clean up VMs
 that exited on their own, deleting their serial logs; read a crashed guest's output with
 `qemu_serial` first. `qemu_boot` and `qemu_qmp` are open-world: `extra_args` and raw QMP
 can reach anything QEMU can.
@@ -125,7 +127,8 @@ qemu_boot(name="a", kernel="build/kernel-aarch64.elf", arch="aarch64", machine="
 qemu_boot(name="r", kernel="build/kernel-riscv64.elf", arch="riscv64", machine="virt")
 ```
 
-Check `qemu-system-<arch> -M help` for the full list of machines an arch supports.
+Run `qemu_machines(arch="aarch64")` for the full list of machines an arch supports —
+it reports `qemu-system-<arch> -M help`'s own output without needing a shell.
 
 `virt` has no default display device — unlike the PC-family boards `x86_64`/
 `i386` boot with, it doesn't wire up VGA on its own. `qemu_screenshot`/
@@ -171,8 +174,9 @@ qemu_boot(name="k", kernel="build/kernel.elf", cpu="max")          # every featu
 qemu_boot(name="k", kernel="build/kernel.elf", accel="kvm", cpu="host")  # pass the host CPU through under KVM
 ```
 
-Check `qemu-system-<arch> -cpu help` for the full list of models/features an
-arch supports.
+Run `qemu_cpu_models(arch="x86_64")` for the full list of models/features an
+arch supports — it reports `qemu-system-<arch> -cpu help`'s own output without
+needing a shell.
 
 ### CPU topology
 

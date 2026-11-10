@@ -77,6 +77,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
 - `qemu_list` now shows `running (paused)` for a VM paused via `qemu_pause`
   (sourced from a `query-status` QMP call per running VM), instead of
   being indistinguishable from a plain running VM.
+- `qemu_machines` / `qemu_cpu_models` — report `qemu-system-<arch> -M help`
+  / `-cpu help`'s own output, listing every valid `qemu_boot` `machine`/`cpu`
+  value for an arch. Previously the README told a human to run these
+  commands themselves; an agent driving this server has no shell to do that.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

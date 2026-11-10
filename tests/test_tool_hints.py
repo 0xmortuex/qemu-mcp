@@ -21,6 +21,8 @@ HINTS = {
     #                        read_only destructive idempotent open_world
     "qemu_boot":            (False,    True,       False,     True),
     "qemu_version":         (True,     False,      True,      False),
+    "qemu_machines":        (True,     False,      True,      False),
+    "qemu_cpu_models":      (True,     False,      True,      False),
     "qemu_disk_create":     (False,    False,      False,     False),
     "qemu_screenshot":      (True,     False,      True,      False),
     "qemu_type":            (False,    True,       False,     False),

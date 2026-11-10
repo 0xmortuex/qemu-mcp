@@ -93,6 +93,18 @@ def find_qemu(arch: str) -> str:
     )
 
 
+def _run_qemu_flag(arch: str, flag: str) -> str:
+    """Run `qemu-system-<arch> <flag>` and return its stdout/stderr, without booting a VM."""
+    qemu = find_qemu(arch)
+    try:
+        result = subprocess.run(
+            [qemu, flag], capture_output=True, text=True, timeout=10, check=False
+        )
+    except subprocess.SubprocessError as e:
+        raise RuntimeError(f"running '{qemu} {flag}' failed: {e}") from e
+    return (result.stdout or result.stderr).strip()
+
+
 def version(arch: str) -> str:
     """Run `qemu-system-<arch> --version` and return its output, without booting a VM.
 
@@ -100,14 +112,27 @@ def version(arch: str) -> str:
     which QMP commands/machine types it supports) before committing to a
     qemu_boot call.
     """
-    qemu = find_qemu(arch)
-    try:
-        result = subprocess.run(
-            [qemu, "--version"], capture_output=True, text=True, timeout=10, check=False
-        )
-    except subprocess.SubprocessError as e:
-        raise RuntimeError(f"running '{qemu} --version' failed: {e}") from e
-    return (result.stdout or result.stderr).strip()
+    return _run_qemu_flag(arch, "--version")
+
+
+def machines(arch: str) -> str:
+    """Run `qemu-system-<arch> -M help` and return its output, without booting a VM.
+
+    Lists every `machine` value qemu_boot accepts for this arch - the same
+    list the README otherwise tells a human to find by running this command
+    themselves, which an agent driving this server has no shell to do.
+    """
+    return _run_qemu_flag(arch, "-M help")
+
+
+def cpu_models(arch: str) -> str:
+    """Run `qemu-system-<arch> -cpu help` and return its output, without booting a VM.
+
+    Lists every `cpu` value qemu_boot accepts for this arch - the same list
+    the README otherwise tells a human to find by running this command
+    themselves, which an agent driving this server has no shell to do.
+    """
+    return _run_qemu_flag(arch, "-cpu help")
 
 
 def _free_port() -> int:

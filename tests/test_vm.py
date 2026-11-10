@@ -134,6 +134,56 @@ def test_version_wraps_a_timeout_as_runtime_error(tmp_path, monkeypatch):
         vm.version("x86_64")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_machines_returns_dash_m_help_output(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, 'echo "Supported machines are:\\nq35 ...\\npc ..."')
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert "q35" in vm.machines("x86_64")
+
+
+def test_machines_raises_when_binary_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(FileNotFoundError):
+        vm.machines("x86_64")
+
+
+def test_machines_wraps_a_timeout_as_runtime_error(tmp_path, monkeypatch):
+    _make_fake_binary(tmp_path, "qemu-system-x86_64")
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    def _timing_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 10))
+
+    monkeypatch.setattr(vm.subprocess, "run", _timing_out)
+    with pytest.raises(RuntimeError, match="-M help"):
+        vm.machines("x86_64")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_cpu_models_returns_dash_cpu_help_output(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, 'echo "x86 Qemu64 ...\\nx86 max ..."')
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert "max" in vm.cpu_models("x86_64")
+
+
+def test_cpu_models_raises_when_binary_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(FileNotFoundError):
+        vm.cpu_models("x86_64")
+
+
+def test_cpu_models_wraps_a_timeout_as_runtime_error(tmp_path, monkeypatch):
+    _make_fake_binary(tmp_path, "qemu-system-x86_64")
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    def _timing_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 10))
+
+    monkeypatch.setattr(vm.subprocess, "run", _timing_out)
+    with pytest.raises(RuntimeError, match="-cpu help"):
+        vm.cpu_models("x86_64")
+
+
 def test_disk_format_detects_qcow2_magic(tmp_path):
     path = tmp_path / "disk.img"
     path.write_bytes(b"QFI\xfbsomeqcow2headerbytes...")
