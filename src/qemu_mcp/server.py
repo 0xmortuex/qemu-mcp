@@ -652,8 +652,8 @@ def qemu_disk_create(path: str, size: str, format: str = "qcow2") -> str:
     point at an existing file. This closes that gap: create one here,
     then boot straight into it.
 
-    size looks like qemu-img's own size grammar: a number optionally
-    suffixed with k/K/M/G/T/P/E, e.g. "10G" or "512M". format must be
+    size looks like qemu-img's own size grammar: a number greater than 0,
+    optionally suffixed with k/K/M/G/T/P/E, e.g. "10G" or "512M". format must be
     "qcow2" (default - needed for qemu_snapshot_save/qemu_snapshot_load)
     or "raw" - qemu_boot's disk_format() auto-detection only tells these
     two apart, so any other qemu-img format would silently be treated as

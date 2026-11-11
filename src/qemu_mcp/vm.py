@@ -355,7 +355,7 @@ _DISK_CREATE_FORMATS = ("qcow2", "raw")
 
 # qemu-img's own size grammar (cvtnum): an integer or decimal byte count,
 # optionally suffixed with a k/K/M/G/T/P/E unit - e.g. "10G", "512M", "2048".
-_DISK_SIZE_RE = re.compile(r"^[0-9]+(\.[0-9]+)?[kKMGTPE]?$")
+_DISK_SIZE_RE = re.compile(r"^(?P<value>[0-9]+(?:\.[0-9]+)?)[kKMGTPE]?$")
 
 
 def disk_create(path: str, size: str, format: str = "qcow2") -> str:
@@ -364,21 +364,24 @@ def disk_create(path: str, size: str, format: str = "qcow2") -> str:
     Validates everything before running qemu-img: `format` must be one
     disk_format() can actually recognize later (qcow2/raw - anything else
     would silently be treated as raw by qemu_boot's -drive), `size` must
-    look like a qemu-img size (e.g. "10G", "512M"), and `path` must not
-    already exist (qemu-img create would otherwise either prompt to
-    overwrite - hanging a non-interactive caller - or silently destroy an
-    existing file).
+    look like a qemu-img size and be greater than 0 (e.g. "10G", "512M"),
+    and `path` must not already exist (qemu-img create would otherwise
+    either prompt to overwrite - hanging a non-interactive caller - or
+    silently destroy an existing file).
     """
     if format not in _DISK_CREATE_FORMATS:
         raise ValueError(
             f"invalid format {format!r}: must be one of {_DISK_CREATE_FORMATS} "
             "(qemu_boot's disk_format() can only tell these two apart)"
         )
-    if not _DISK_SIZE_RE.match(size):
+    size_match = _DISK_SIZE_RE.match(size)
+    if not size_match:
         raise ValueError(
             f"invalid size {size!r}: expected a number optionally suffixed with "
             "k/K/M/G/T/P/E, e.g. '10G' or '512M'"
         )
+    if float(size_match.group("value")) <= 0:
+        raise ValueError(f"invalid size {size!r}: must be greater than 0")
     if os.path.exists(path):
         raise FileExistsError(f"refusing to overwrite existing file: {path}")
     qemu_img = find_qemu_img()

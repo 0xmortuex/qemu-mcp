@@ -236,6 +236,14 @@ def test_disk_create_rejects_invalid_size(tmp_path, bad_size):
         vm.disk_create(str(tmp_path / "disk.img"), bad_size)
 
 
+@pytest.mark.parametrize("zero_size", ["0", "0.0", "0G", "0.00K"])
+def test_disk_create_rejects_zero_size(tmp_path, zero_size):
+    # Matches the size grammar but is a meaningless disk - reject before
+    # find_qemu_img() is even called, same as the other bad sizes above.
+    with pytest.raises(ValueError, match="greater than 0"):
+        vm.disk_create(str(tmp_path / "disk.img"), zero_size)
+
+
 @pytest.mark.parametrize("good_size", ["1024", "512M", "10G", "2.5G", "1T"])
 def test_disk_create_accepts_well_formed_sizes(tmp_path, monkeypatch, good_size):
     # Format/size validation happens before find_qemu_img() is ever called -

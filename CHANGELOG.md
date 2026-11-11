@@ -205,3 +205,7 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `qemu_screenshot`/`qemu_serial_send`/`qemu_qmp`/`qemu_change_media`; a
   concurrent `qemu_stop` could close their connection out from under them
   instead of waiting, the same gap already fixed for those other tools.
+- `qemu_disk_create`'s `size` grammar check accepted `"0"`/`"0G"`/etc as a
+  well-formed (but meaningless) size, which would have reached `qemu-img
+  create` itself instead of a clear pre-flight error; `size` must now be
+  greater than 0.
