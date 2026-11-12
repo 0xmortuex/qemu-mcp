@@ -244,7 +244,10 @@ def test_disk_create_rejects_zero_size(tmp_path, zero_size):
         vm.disk_create(str(tmp_path / "disk.img"), zero_size)
 
 
-@pytest.mark.parametrize("good_size", ["1024", "512M", "10G", "2.5G", "1T"])
+@pytest.mark.parametrize(
+    "good_size",
+    ["1024", "512M", "10G", "2.5G", "1T", "512m", "10g", "2.5t", "1p", "1e", "1k"],
+)
 def test_disk_create_accepts_well_formed_sizes(tmp_path, monkeypatch, good_size):
     # Format/size validation happens before find_qemu_img() is ever called -
     # an empty PATH proves these sizes get past the regex, not that a real

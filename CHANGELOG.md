@@ -209,3 +209,8 @@ was tested, what still needs a real QEMU boot) behind each entry.
   well-formed (but meaningless) size, which would have reached `qemu-img
   create` itself instead of a clear pre-flight error; `size` must now be
   greater than 0.
+- `qemu_disk_create`'s `size` only accepted its unit suffix as uppercase
+  `M`/`G`/`T`/`P`/`E` (`k`/`K` already worked either way), rejecting
+  otherwise-valid input like `size="512m"`; confirmed against QEMU's own
+  upstream `do_strtosz` (`util/cutils.c`), which matches all six unit
+  letters case-insensitively, and widened the regex to match.

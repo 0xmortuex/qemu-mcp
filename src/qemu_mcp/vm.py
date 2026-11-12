@@ -353,9 +353,15 @@ def find_qemu_img() -> str:
 # format=raw and fail to actually use the format it was created with.
 _DISK_CREATE_FORMATS = ("qcow2", "raw")
 
-# qemu-img's own size grammar (cvtnum): an integer or decimal byte count,
-# optionally suffixed with a k/K/M/G/T/P/E unit - e.g. "10G", "512M", "2048".
-_DISK_SIZE_RE = re.compile(r"^(?P<value>[0-9]+(?:\.[0-9]+)?)[kKMGTPE]?$")
+# qemu-img's own size grammar (cvtnum -> qemu_strtosz -> do_strtosz in
+# upstream util/cutils.c): an integer or decimal byte count, optionally
+# suffixed with a k/m/g/t/p/e unit - e.g. "10G", "512M", "2048". Confirmed
+# against that upstream source that the suffix switch runs on
+# qemu_toupper(suffix), so all six unit letters are case-insensitive there,
+# not just k/K - this regex must accept lowercase m/g/t/p/e too, not only
+# uppercase, or qemu_disk_create would reject otherwise-valid input like
+# size="512m".
+_DISK_SIZE_RE = re.compile(r"^(?P<value>[0-9]+(?:\.[0-9]+)?)[kKmMgGtTpPeE]?$")
 
 
 def disk_create(path: str, size: str, format: str = "qcow2") -> str:
@@ -378,7 +384,7 @@ def disk_create(path: str, size: str, format: str = "qcow2") -> str:
     if not size_match:
         raise ValueError(
             f"invalid size {size!r}: expected a number optionally suffixed with "
-            "k/K/M/G/T/P/E, e.g. '10G' or '512M'"
+            "a (case-insensitive) k/m/g/t/p/e unit, e.g. '10G' or '512m'"
         )
     if float(size_match.group("value")) <= 0:
         raise ValueError(f"invalid size {size!r}: must be greater than 0")
