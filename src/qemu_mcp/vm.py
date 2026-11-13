@@ -197,8 +197,30 @@ _HOSTFWD_RE = re.compile(
 )
 
 
+def parse_hostfwd(hostfwd: str) -> list[str]:
+    """Split a qemu_boot `hostfwd` string into its individual rules.
+
+    QEMU's -netdev user accepts the hostfwd= option multiple times on one
+    netdev (it's explicitly documented as repeatable, unlike most QemuOpts
+    keys), so a caller forwarding more than one guest port needs more than
+    one rule - qemu_boot takes that as a single comma-separated string
+    (e.g. "tcp::2222-:22,tcp::8080-:80") rather than a list param, since MCP
+    tool params are simple scalars. Each part must match _HOSTFWD_RE; this
+    raises ValueError naming the exact bad part, not just the whole string.
+    """
+    rules = [part.strip() for part in hostfwd.split(",")]
+    for rule in rules:
+        if not rule or _HOSTFWD_RE.match(rule) is None:
+            raise ValueError(
+                f"invalid hostfwd rule {rule!r} in {hostfwd!r}: each comma-separated "
+                "part must look like QEMU's hostfwd rule (e.g. \"tcp::2222-:22\"), "
+                "i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
+            )
+    return rules
+
+
 def _check_hostfwd_port_free(hostfwd_match: re.Match[str]) -> None:
-    """Pre-flight collision probe for qemu_boot's hostfwd host port.
+    """Pre-flight collision probe for one qemu_boot hostfwd rule's host port.
 
     Unlike the QMP/serial ports vm.boot() allocates itself (_free_port()
     binds an ephemeral socket to confirm the OS considers it free), the
@@ -207,7 +229,8 @@ def _check_hostfwd_port_free(hostfwd_match: re.Match[str]) -> None:
     turns a collision (two VMs sharing a hostfwd port, or some unrelated
     process already bound to it) into a clear ValueError naming the port
     instead of QEMU's own bind-failure output surfacing through the
-    generic "QEMU exited immediately" path.
+    generic "QEMU exited immediately" path. Called once per rule when
+    hostfwd carries more than one.
     """
     proto = hostfwd_match.group("proto") or "tcp"
     hostaddr = hostfwd_match.group("hostaddr") or "0.0.0.0"
@@ -623,14 +646,9 @@ def boot(
             raise ValueError(
                 f"invalid {_topology_name} {_topology_val!r}: must be a positive integer"
             )
-    hostfwd_match: re.Match[str] | None = None
+    hostfwd_rules: list[str] = []
     if hostfwd is not None:
-        hostfwd_match = _HOSTFWD_RE.match(hostfwd)
-        if hostfwd_match is None:
-            raise ValueError(
-                f"invalid hostfwd {hostfwd!r}: must look like QEMU's hostfwd rule "
-                "(e.g. \"tcp::2222-:22\"), i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
-            )
+        hostfwd_rules = parse_hostfwd(hostfwd)
     if (append or initrd) and not kernel:
         culprit = "append" if append else "initrd"
         raise ValueError(
@@ -680,8 +698,10 @@ def boot(
 
         qemu = find_qemu(arch)
 
-        if hostfwd_match is not None:
-            _check_hostfwd_port_free(hostfwd_match)
+        for rule in hostfwd_rules:
+            match = _HOSTFWD_RE.match(rule)
+            assert match is not None  # parse_hostfwd already validated every rule
+            _check_hostfwd_port_free(match)
 
         last_error: RuntimeError | None = None
         for _attempt in range(_MAX_PORT_CONFLICT_RETRIES):
@@ -718,9 +738,10 @@ def boot(
                 args += ["-accel", accel]
             if cpu:
                 args += ["-cpu", cpu]
-            if hostfwd:
+            if hostfwd_rules:
+                hostfwd_opts = ",".join(f"hostfwd={rule}" for rule in hostfwd_rules)
                 args += [
-                    "-netdev", f"user,id={_HOSTFWD_NETDEV_ID},hostfwd={hostfwd}",
+                    "-netdev", f"user,id={_HOSTFWD_NETDEV_ID},{hostfwd_opts}",
                     "-device", f"{_HOSTFWD_NIC_MODEL},netdev={_HOSTFWD_NETDEV_ID}",
                 ]
             if iso:

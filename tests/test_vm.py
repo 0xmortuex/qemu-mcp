@@ -504,6 +504,38 @@ def test_boot_does_not_create_workdir_for_malformed_hostfwd(monkeypatch):
     assert created == []
 
 
+def test_parse_hostfwd_splits_multiple_rules():
+    assert vm.parse_hostfwd("tcp::2222-:22,tcp::8080-:80") == [
+        "tcp::2222-:22", "tcp::8080-:80",
+    ]
+
+
+def test_parse_hostfwd_single_rule_is_a_one_item_list():
+    assert vm.parse_hostfwd("tcp::2222-:22") == ["tcp::2222-:22"]
+
+
+def test_parse_hostfwd_names_the_bad_rule_when_only_one_of_several_is_malformed():
+    try:
+        vm.parse_hostfwd("tcp::2222-:22,not-a-rule,tcp::8080-:80")
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr("not-a-rule") in str(e)
+        # the whole string too, so it's clear which hostfwd= call this was
+        assert repr("tcp::2222-:22,not-a-rule,tcp::8080-:80") in str(e)
+
+
+def test_boot_rejects_hostfwd_when_any_rule_in_a_list_is_malformed():
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd="tcp::2222-:22,bogus",
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr("bogus") in str(e)
+
+
 def test_check_hostfwd_port_free_passes_when_port_is_free():
     # Grab a definitely-free ephemeral port, then release it immediately -
     # same tiny TOCTOU window _free_port() itself already has.
@@ -2608,6 +2640,59 @@ def test_boot_passes_hostfwd_onto_the_qemu_command_line(tmp_path, monkeypatch):
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_passes_multiple_hostfwd_rules_onto_one_netdev(tmp_path, monkeypatch):
+    # QEMU's -netdev user accepts hostfwd= repeated on one netdev - confirms
+    # qemu-mcp builds exactly one -netdev/-device pair carrying both rules,
+    # not two separate NICs.
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-multi-hostfwd", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd="tcp::2222-:22,tcp::8080-:80",
+        )
+        assert booted.cmdline.count("-netdev") == 1
+        assert booted.cmdline[booted.cmdline.index("-netdev") + 1] == (
+            "user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80"
+        )
+        assert booted.cmdline.count("-device") == 1
+        assert booted.cmdline[booted.cmdline.index("-device") + 1] == "e1000,netdev=net0"
+    finally:
+        booted = vm._vms.pop("boot-with-multi-hostfwd", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+def test_boot_checks_port_free_for_every_hostfwd_rule_not_just_the_first(monkeypatch, tmp_path):
+    monkeypatch.setattr(vm, "find_qemu", lambda arch: "/nonexistent/qemu-system-x86_64")
+    created = _track_mkdtemp(monkeypatch)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        port = occupied.getsockname()[1]
+        try:
+            vm.boot(
+                name="valid-name", arch="x86_64", memory_mb=64,
+                iso=str(iso), kernel=None, append=None, initrd=None,
+                disk=None, extra_args=None,
+                hostfwd=f"tcp::9-:9,tcp:127.0.0.1:{port}-:22",
+            )
+            assert False, "expected ValueError"
+        except ValueError as e:
+            assert str(port) in str(e)
+    assert created == []
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")

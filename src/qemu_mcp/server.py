@@ -164,7 +164,11 @@ def qemu_boot(
     "-netdev user,id=net0,hostfwd=..." / "-device e1000,netdev=net0" pair
     for you (the guest needs its own driver for an e1000 NIC - most
     general-purpose OSes, Linux included, have one built in). Must look
-    like [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport. -netdev/-device
+    like [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport. To forward more
+    than one port, give a comma-separated list of rules, e.g.
+    hostfwd="tcp::2222-:22,tcp::8080-:80" - QEMU's -netdev user accepts
+    hostfwd= multiple times on one netdev, so both land on the same
+    net0/e1000 pair instead of needing a second NIC. -netdev/-device
     are similarly exempt from the extra_args conflict check except for the
     exact netdev hostfwd's own NIC uses (id=net0 / netdev=net0) - extra_args
     can add an unrelated NIC (e.g. for testing a guest driver) freely, but

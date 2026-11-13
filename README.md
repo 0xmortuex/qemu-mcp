@@ -211,6 +211,15 @@ own NIC driver (like the `rtl8139` example above), use `extra_args` instead -
 `hostfwd` is for forwarding a port to a guest that already has working
 networking, not for picking which NIC a from-scratch kernel talks to.
 
+To forward more than one port, give a comma-separated list of rules - QEMU's
+`-netdev user` accepts `hostfwd=` multiple times on one netdev, so both land
+on the same NIC instead of needing a second one:
+
+```
+qemu_boot(name="k", disk="build/linux.qcow2", hostfwd="tcp::2222-:22,tcp::8080-:80")
+# host:2222 -> guest:22 (ssh), host:8080 -> guest:80 (http)
+```
+
 ## Debugging the kernel
 
 qemu-mcp lets an agent *see* a crash. To find out *why* it happened, pair it with
