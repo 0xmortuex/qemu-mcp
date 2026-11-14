@@ -67,6 +67,20 @@ def test_read_timeout_is_configurable_via_constructor():
         server.close()
 
 
+def test_command_accepts_an_argument_literally_called_name():
+    # qemu_qmp forwards an arbitrary caller-supplied dict as **arguments;
+    # a real QMP command (query-rx-filter) has an optional "name" argument,
+    # which used to collide with command()'s own "name" parameter and raise
+    # a raw TypeError instead of reaching QEMU at all.
+    server, port = _echoing_qmp_server()
+    try:
+        client = QMPClient(port)
+        assert client.command("query-rx-filter", name="net0") == {"got": "query-rx-filter"}
+    finally:
+        client.close()
+        server.close()
+
+
 def test_command_wraps_a_send_error_in_qmp_error():
     client = QMPClient.__new__(QMPClient)
     client.sock = _RaisingSocket()

@@ -214,3 +214,8 @@ was tested, what still needs a real QEMU boot) behind each entry.
   otherwise-valid input like `size="512m"`; confirmed against QEMU's own
   upstream `do_strtosz` (`util/cutils.c`), which matches all six unit
   letters case-insensitively, and widened the regex to match.
+- `qemu_qmp`'s `arguments` dict crashed with a raw, uncaught `TypeError`
+  instead of a clean error whenever it contained a key literally called
+  `"name"` (e.g. QEMU's own `query-rx-filter` command's optional net-client
+  name) - `QMPClient.command()`'s `name` parameter is now positional-only
+  so it can't collide with a same-named QMP argument.

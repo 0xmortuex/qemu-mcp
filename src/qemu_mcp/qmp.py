@@ -62,7 +62,15 @@ class QMPClient:
         result: dict[str, Any] = json.loads(line)
         return result
 
-    def command(self, name: str, **arguments: Any) -> Any:
+    def command(self, name: str, /, **arguments: Any) -> Any:
+        # name is positional-only so a QMP argument literally called "name"
+        # (e.g. query-rx-filter's optional net client name) lands in
+        # **arguments instead of colliding with this parameter - qemu_qmp's
+        # raw escape hatch forwards an arbitrary caller-supplied dict here
+        # via **(arguments or {}), and before this a dict containing "name"
+        # raised "command() got multiple values for argument 'name'", a raw
+        # TypeError the server's ToolError wrapping doesn't catch either.
+        #
         # Held for the whole send+read round trip: QMP has no request-id
         # correlation, so two threads sharing one socket without this lock
         # can each read the other's response off the wire.
