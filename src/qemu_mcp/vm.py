@@ -207,15 +207,35 @@ def parse_hostfwd(hostfwd: str) -> list[str]:
     (e.g. "tcp::2222-:22,tcp::8080-:80") rather than a list param, since MCP
     tool params are simple scalars. Each part must match _HOSTFWD_RE; this
     raises ValueError naming the exact bad part, not just the whole string.
+
+    Also rejects two rules that claim the same (proto, hostaddr, hostport) -
+    _check_hostfwd_port_free() probes each rule's port independently and
+    releases the probe socket before moving to the next, so a same-string
+    duplicate (e.g. "tcp::2222-:22,tcp::2222-:80") would otherwise pass that
+    probe on both rules and only fail once QEMU itself tries to bind
+    hostfwd= twice for the same host port, surfacing as the generic "QEMU
+    exited immediately" dump this whole validation path exists to avoid.
     """
     rules = [part.strip() for part in hostfwd.split(",")]
+    seen: dict[tuple[str, str, str], str] = {}
     for rule in rules:
-        if not rule or _HOSTFWD_RE.match(rule) is None:
+        if not rule or (match := _HOSTFWD_RE.match(rule)) is None:
             raise ValueError(
                 f"invalid hostfwd rule {rule!r} in {hostfwd!r}: each comma-separated "
                 "part must look like QEMU's hostfwd rule (e.g. \"tcp::2222-:22\"), "
                 "i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
             )
+        key = (
+            match.group("proto") or "tcp",
+            match.group("hostaddr") or "0.0.0.0",
+            match.group("hostport"),
+        )
+        if key in seen:
+            raise ValueError(
+                f"invalid hostfwd {hostfwd!r}: rules {seen[key]!r} and {rule!r} both "
+                f"claim host port {key[2]} ({key[0]}) on {key[1]!r}"
+            )
+        seen[key] = rule
     return rules
 
 

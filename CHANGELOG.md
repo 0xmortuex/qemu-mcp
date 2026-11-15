@@ -219,3 +219,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `"name"` (e.g. QEMU's own `query-rx-filter` command's optional net-client
   name) - `QMPClient.command()`'s `name` parameter is now positional-only
   so it can't collide with a same-named QMP argument.
+- `qemu_boot`'s multi-rule `hostfwd` let two rules claim the same host port
+  (e.g. `hostfwd="tcp::2222-:22,tcp::2222-:80"`); the per-rule port-free
+  probe checked each one independently and released its probe socket
+  before the next, so the duplicate passed pre-flight and only failed once
+  QEMU itself tried to bind `hostfwd=` twice, surfacing as the generic
+  "QEMU exited immediately" dump this whole check exists to avoid.
+  `parse_hostfwd()` now rejects a same-port duplicate up front.

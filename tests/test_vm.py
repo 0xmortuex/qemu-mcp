@@ -524,6 +524,46 @@ def test_parse_hostfwd_names_the_bad_rule_when_only_one_of_several_is_malformed(
         assert repr("tcp::2222-:22,not-a-rule,tcp::8080-:80") in str(e)
 
 
+def test_parse_hostfwd_rejects_two_rules_claiming_the_same_port():
+    try:
+        vm.parse_hostfwd("tcp::2222-:22,tcp::2222-:80")
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "2222" in str(e)
+        assert repr("tcp::2222-:22") in str(e)
+        assert repr("tcp::2222-:80") in str(e)
+
+
+def test_parse_hostfwd_allows_same_port_on_different_protocols():
+    # tcp and udp sockets don't share a namespace - a tcp/udp pair on the
+    # same port number is not a real collision, unlike two tcp rules.
+    assert vm.parse_hostfwd("tcp::53-:53,udp::53-:53") == ["tcp::53-:53", "udp::53-:53"]
+
+
+def test_parse_hostfwd_treats_an_explicit_and_implicit_wildcard_hostaddr_as_the_same():
+    # "" and "0.0.0.0" both mean "all interfaces" - _check_hostfwd_port_free
+    # normalizes them the same way, so the duplicate check must too.
+    try:
+        vm.parse_hostfwd("tcp::2222-:22,tcp:0.0.0.0:2222-:80")
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "2222" in str(e)
+
+
+def test_boot_rejects_hostfwd_duplicate_port_without_creating_a_workdir(monkeypatch):
+    created = _track_mkdtemp(monkeypatch)
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd="tcp::2222-:22,tcp::2222-:80",
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "2222" in str(e)
+    assert created == []
+
+
 def test_boot_rejects_hostfwd_when_any_rule_in_a_list_is_malformed():
     try:
         vm.boot(
