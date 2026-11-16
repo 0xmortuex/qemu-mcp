@@ -1616,6 +1616,58 @@ def test_qemu_screenshot_raises_clearly_if_vm_exits_mid_screendump(tmp_path, mon
         vm._vms.pop("screenshot-crash-test", None)
 
 
+class _StuckScreendumpQMP(_FakeQMP):
+    """screendump 'succeeds' (no QMPError) but never writes the file, while
+    the VM keeps running - simulates a screendump that's simply slow to
+    land (heavy guest load, slow host disk I/O) rather than a VM exit."""
+
+    def command(self, name, **kwargs):
+        assert name == "screendump"
+        return {}
+
+
+def test_qemu_screenshot_raises_clearly_if_screendump_never_writes_while_running(
+    tmp_path, monkeypatch
+):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-screenshot-stuck-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("screenshot-stuck-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _StuckScreendumpQMP()
+    monkeypatch.setattr(server.time, "sleep", lambda s: None)
+
+    try:
+        with pytest.raises(RuntimeError, match="produced no data"):
+            server.qemu_screenshot(name="screenshot-stuck-test")
+        assert list(workdir.glob("*.ppm")) == [], "the empty tempfile must still be cleaned up"
+    finally:
+        vm._vms.pop("screenshot-stuck-test", None)
+
+
+def test_qemu_wait_screen_raises_clearly_if_screendump_never_writes_while_running(
+    tmp_path, monkeypatch
+):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-screen-stuck-test"
+    workdir.mkdir()
+    fake = _register_fake_vm("wait-screen-stuck-test", workdir)
+    fake.proc = _RunningFakeProc()
+    fake.qmp = _StuckScreendumpQMP()
+    monkeypatch.setattr(server.time, "sleep", lambda s: None)
+
+    try:
+        with pytest.raises(RuntimeError, match="produced no data"):
+            server.qemu_wait_screen(
+                name="wait-screen-stuck-test", timeout_s=5, poll_interval_s=0.01, stable_polls=1
+            )
+        assert list(workdir.glob("*.ppm")) == [], "the empty tempfile must still be cleaned up"
+    finally:
+        vm._vms.pop("wait-screen-stuck-test", None)
+
+
 def test_qemu_wait_screen_uses_a_unique_tempfile_and_cleans_up(tmp_path):
     from qemu_mcp import server
 

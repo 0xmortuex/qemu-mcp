@@ -226,3 +226,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   QEMU itself tried to bind `hostfwd=` twice, surfacing as the generic
   "QEMU exited immediately" dump this whole check exists to avoid.
   `parse_hostfwd()` now rejects a same-port duplicate up front.
+- `qemu_screenshot`/`qemu_wait_screen` left an opaque `PIL.UnidentifiedImageError:
+  cannot identify image file` to escape if a screendump was simply slow to
+  land (heavy guest load, slow host disk I/O) rather than the VM exiting -
+  both tools polled for the screendump file to become non-empty but only
+  raised a clear error for the "VM exited" case, silently handing PIL an
+  empty file otherwise. A new shared `_await_screendump_write()` helper now
+  raises a clear `RuntimeError` naming what happened in that case too.

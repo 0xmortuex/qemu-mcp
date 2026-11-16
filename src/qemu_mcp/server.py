@@ -214,6 +214,37 @@ def qemu_boot(
     )
 
 
+# QMP returns before a screendump's file write is guaranteed visible, so
+# every screendump-based tool polls os.path.getsize for up to this long
+# before giving up.
+_SCREENDUMP_POLLS = 20
+_SCREENDUMP_POLL_INTERVAL_S = 0.05
+
+
+def _await_screendump_write(ppm: str, vm: vmmod.VM, name: str) -> None:
+    """Wait for a just-issued screendump to actually write `ppm`.
+
+    Only raises when the guest is still running and the file is still
+    empty after the full poll window - a VM that exited mid-screendump is
+    left for the caller to handle (qemu_screenshot and qemu_wait_screen
+    report that differently), same as before this helper existed. Without
+    this, a screendump that's simply slow to land (heavy guest load, slow
+    host disk I/O) left an empty .ppm that load_frame/PIL.Image.open then
+    failed on with an opaque "cannot identify image file" error instead of
+    a clear one naming what actually happened.
+    """
+    for _ in range(_SCREENDUMP_POLLS):
+        if os.path.getsize(ppm) > 0:
+            return
+        time.sleep(_SCREENDUMP_POLL_INTERVAL_S)
+    if vm.running:
+        raise RuntimeError(
+            f"screendump for VM {name!r} produced no data within "
+            f"{_SCREENDUMP_POLLS * _SCREENDUMP_POLL_INTERVAL_S:.1f}s - the guest "
+            "may be under heavy load, or this host's disk I/O may be unusually slow"
+        )
+
+
 @tool(read_only=True, destructive=False, idempotent=True, open_world=False)
 def qemu_screenshot(name: str) -> Image:
     """Capture the VM's display as a PNG image.
@@ -222,7 +253,8 @@ def qemu_screenshot(name: str) -> Image:
     screendump. Use it to see boot screens, kernel panics, GUIs, or a
     text console that doesn't write to serial. Raises a clear error
     (instead of an opaque image-decoding failure) if the VM exits while
-    the screendump is in flight.
+    the screendump is in flight, or if the screendump simply never
+    produces data in time.
     """
     from PIL import Image as PILImage
 
@@ -232,17 +264,12 @@ def qemu_screenshot(name: str) -> Image:
         os.close(fd)
         try:
             vm.qmp.command("screendump", filename=ppm)
-            # QMP returns before the file write is guaranteed visible; poll briefly.
-            for _ in range(20):
-                if os.path.getsize(ppm) > 0:
-                    break
-                time.sleep(0.05)
-            else:
-                if not vm.running:
-                    raise RuntimeError(
-                        f"VM {name!r} exited while taking a screenshot "
-                        f"(code {vm.proc.returncode})"
-                    )
+            _await_screendump_write(ppm, vm, name)
+            if not vm.running:
+                raise RuntimeError(
+                    f"VM {name!r} exited while taking a screenshot "
+                    f"(code {vm.proc.returncode})"
+                )
             with PILImage.open(ppm) as im:
                 buf = io.BytesIO()
                 im.save(buf, format="PNG")
@@ -572,7 +599,11 @@ def qemu_wait_screen(
     guest (no serial output) has finished a BIOS splash or boot animation
     before you screenshot or type. For guests with serial output, prefer
     qemu_wait_serial - it doesn't need a fixed number of polls to decide.
-    Always polls at least once, even if timeout_s is 0 or negative.
+    Always polls at least once, even if timeout_s is 0 or negative. Raises
+    a clear error (instead of an opaque image-decoding failure) if a single
+    screendump produces no data at all within 1s while the VM is still
+    running - a guest under heavy load or an unusually slow host disk,
+    rather than a VM exit, which is reported as VM EXITED instead.
     poll_interval_s must be positive.
     """
     if poll_interval_s <= 0:
@@ -591,10 +622,7 @@ def qemu_wait_screen(
             polls = 0
             while True:
                 vm.qmp.command("screendump", filename=ppm)
-                for _ in range(20):
-                    if os.path.getsize(ppm) > 0:
-                        break
-                    time.sleep(0.05)
+                _await_screendump_write(ppm, vm, name)
                 polls += 1
                 if not vm.running:
                     return f"VM EXITED after {polls} polls"
