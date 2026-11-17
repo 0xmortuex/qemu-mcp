@@ -233,3 +233,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   raised a clear error for the "VM exited" case, silently handing PIL an
   empty file otherwise. A new shared `_await_screendump_write()` helper now
   raises a clear `RuntimeError` naming what happened in that case too.
+- `qemu_boot`'s `hostfwd` host port had no upper bound, so a port above
+  65535 (e.g. `"tcp::999999-:22"`) reached `socket.bind()`'s own
+  `OverflowError` - a type the pre-flight port-free probe (and the tool
+  boundary's exception wrapping) didn't catch, since both only handle
+  `OSError` - crashing `qemu_boot` with a bare "Error executing tool
+  qemu_boot" instead of a clear validation error. `parse_hostfwd()` now
+  rejects an out-of-range host port before any probing happens.

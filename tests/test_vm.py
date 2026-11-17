@@ -550,6 +550,37 @@ def test_parse_hostfwd_treats_an_explicit_and_implicit_wildcard_hostaddr_as_the_
         assert "2222" in str(e)
 
 
+def test_parse_hostfwd_rejects_a_host_port_above_65535():
+    # _HOSTFWD_RE's hostport group is a bare \d+ with no upper bound, and
+    # socket.bind() raises OverflowError (not OSError) for a port out of
+    # range - _check_hostfwd_port_free only catches OSError, so an
+    # out-of-range port used to escape as an uncaught OverflowError instead
+    # of this clear ValueError.
+    try:
+        vm.parse_hostfwd("tcp::999999-:22")
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "999999" in str(e)
+
+
+def test_parse_hostfwd_accepts_the_boundary_port_65535():
+    assert vm.parse_hostfwd("tcp::65535-:22") == ["tcp::65535-:22"]
+
+
+def test_boot_rejects_hostfwd_port_above_65535_without_creating_a_workdir(monkeypatch):
+    created = _track_mkdtemp(monkeypatch)
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd="tcp::999999-:22",
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "999999" in str(e)
+    assert created == []
+
+
 def test_boot_rejects_hostfwd_duplicate_port_without_creating_a_workdir(monkeypatch):
     created = _track_mkdtemp(monkeypatch)
     try:

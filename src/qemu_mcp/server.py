@@ -171,6 +171,7 @@ def qemu_boot(
     net0/e1000 pair instead of needing a second NIC - two rules claiming the
     same host port (e.g. "tcp::2222-:22,tcp::2222-:80") are rejected up
     front rather than each passing the pre-flight port-free probe below.
+    Each rule's host port must be 0-65535.
     -netdev/-device
     are similarly exempt from the extra_args conflict check except for the
     exact netdev hostfwd's own NIC uses (id=net0 / netdev=net0) - extra_args

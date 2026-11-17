@@ -215,6 +215,13 @@ def parse_hostfwd(hostfwd: str) -> list[str]:
     probe on both rules and only fail once QEMU itself tries to bind
     hostfwd= twice for the same host port, surfacing as the generic "QEMU
     exited immediately" dump this whole validation path exists to avoid.
+
+    Also rejects a host port outside 0-65535 - _HOSTFWD_RE's \\d+ accepts any
+    number of digits, and socket.bind() raises OverflowError (not OSError)
+    for one out of range, which _check_hostfwd_port_free's later probe
+    doesn't catch (only OSError is), so an out-of-range port used to escape
+    uncaught past server.py's _EXPECTED tuple as a bare "Error executing
+    tool qemu_boot" instead of a clear pre-flight error.
     """
     rules = [part.strip() for part in hostfwd.split(",")]
     seen: dict[tuple[str, str, str], str] = {}
@@ -224,6 +231,12 @@ def parse_hostfwd(hostfwd: str) -> list[str]:
                 f"invalid hostfwd rule {rule!r} in {hostfwd!r}: each comma-separated "
                 "part must look like QEMU's hostfwd rule (e.g. \"tcp::2222-:22\"), "
                 "i.e. [tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport"
+            )
+        hostport_num = int(match.group("hostport"))
+        if hostport_num > 65535:
+            raise ValueError(
+                f"invalid hostfwd rule {rule!r} in {hostfwd!r}: host port "
+                f"{hostport_num} is out of range (must be 0-65535)"
             )
         key = (
             match.group("proto") or "tcp",
