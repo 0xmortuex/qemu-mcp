@@ -178,6 +178,8 @@ _CONDITIONAL_FLAGS: dict[str, frozenset[str]] = {
     "smp": frozenset({"-smp"}),
     "accel": frozenset({"-accel"}),
     "cpu": frozenset({"-cpu"}),
+    "no_reboot": frozenset({"-no-reboot"}),
+    "no_shutdown": frozenset({"-no-shutdown"}),
 }
 
 _SERIAL_CHARDEV_ID = "serial0"
@@ -332,6 +334,8 @@ def _check_extra_args_conflicts(
     accel: str | None,
     cpu: str | None,
     hostfwd: str | None,
+    no_reboot: bool,
+    no_shutdown: bool,
 ) -> None:
     """Reject an extra_args token that duplicates a flag vm.boot() already sets.
 
@@ -348,7 +352,7 @@ def _check_extra_args_conflicts(
         # fed by five separate params - any one of them being set means -smp
         # will be on the command line, so all five must gate the same conflict.
         "smp": smp or smp_cores or smp_threads or smp_sockets or smp_maxcpus,
-        "accel": accel, "cpu": cpu,
+        "accel": accel, "cpu": cpu, "no_reboot": no_reboot, "no_shutdown": no_shutdown,
     }
     for param, flags in _CONDITIONAL_FLAGS.items():
         if given[param]:
@@ -657,6 +661,8 @@ def boot(
     accel: str | None = None,
     cpu: str | None = None,
     hostfwd: str | None = None,
+    no_reboot: bool = False,
+    no_shutdown: bool = False,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> VM:
@@ -708,7 +714,7 @@ def boot(
         extra_argv, machine=machine, iso=iso, kernel=kernel, append=append,
         initrd=initrd, disk=disk, smp=smp, smp_cores=smp_cores, smp_threads=smp_threads,
         smp_sockets=smp_sockets, smp_maxcpus=smp_maxcpus, accel=accel, cpu=cpu,
-        hostfwd=hostfwd,
+        hostfwd=hostfwd, no_reboot=no_reboot, no_shutdown=no_shutdown,
     )
 
     reap_dead()
@@ -771,6 +777,10 @@ def boot(
                 args += ["-accel", accel]
             if cpu:
                 args += ["-cpu", cpu]
+            if no_reboot:
+                args += ["-no-reboot"]
+            if no_shutdown:
+                args += ["-no-shutdown"]
             if hostfwd_rules:
                 hostfwd_opts = ",".join(f"hostfwd={rule}" for rule in hostfwd_rules)
                 args += [

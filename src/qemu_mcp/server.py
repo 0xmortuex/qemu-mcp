@@ -96,6 +96,8 @@ def qemu_boot(
     accel: str | None = None,
     cpu: str | None = None,
     hostfwd: str | None = None,
+    no_reboot: bool = False,
+    no_shutdown: bool = False,
     qmp_connect_timeout_s: float = 20.0,
     qmp_read_timeout_s: float = 15.0,
 ) -> str:
@@ -144,8 +146,9 @@ def qemu_boot(
     (must be valid shell-style quoting, e.g. no unbalanced quotes). extra_args
     may not contain a flag qemu_boot already sets itself: -name, -m, -display,
     -qmp always; -M/-machine, -cdrom/-boot, -kernel, -append, -initrd, -smp,
-    -accel, -cpu when the corresponding param above is also given (-smp
-    collides when smp or any of the smp_* topology params is given).
+    -accel, -cpu, -no-reboot, -no-shutdown when the corresponding param above
+    is also given (-smp collides when smp or any of the smp_* topology
+    params is given).
     -drive is exempt from this check even when disk is given - QEMU allows
     repeated -drive flags, so extra_args can add further disks, e.g.
     extra_args="-drive file=data.img,format=raw" for a second drive alongside
@@ -172,6 +175,17 @@ def qemu_boot(
     same host port (e.g. "tcp::2222-:22,tcp::2222-:80") are rejected up
     front rather than each passing the pre-flight port-free probe below.
     Each rule's host port must be 0-65535.
+    no_reboot/no_shutdown map to QEMU's -no-reboot/-no-shutdown flags: without
+    them, a guest kernel panic that triggers a triple fault or ACPI shutdown
+    immediately restarts or exits the emulated machine, so by the time
+    qemu_wait_serial/qemu_screenshot gets to look, the crash screen or last
+    serial output is already gone. no_reboot halts QEMU instead of resetting
+    on a triple fault or guest-initiated reboot; no_shutdown halts QEMU
+    instead of exiting on a guest-initiated poweroff, leaving the VM frozen
+    (still shown by qemu_list, still inspectable via qemu_screenshot/qemu_serial,
+    then stoppable with qemu_stop) for a post-mortem look instead of
+    disappearing. Both default to False (QEMU's own default behavior) and
+    take no value - they're bare flags, no validation needed.
     -netdev/-device
     are similarly exempt from the extra_args conflict check except for the
     exact netdev hostfwd's own NIC uses (id=net0 / netdev=net0) - extra_args
@@ -195,6 +209,7 @@ def qemu_boot(
         name, arch, memory_mb, iso, kernel, append, initrd, disk, extra_args, machine, smp,
         smp_cores=smp_cores, smp_threads=smp_threads, smp_sockets=smp_sockets,
         smp_maxcpus=smp_maxcpus, accel=accel, cpu=cpu, hostfwd=hostfwd,
+        no_reboot=no_reboot, no_shutdown=no_shutdown,
         qmp_connect_timeout_s=qmp_connect_timeout_s, qmp_read_timeout_s=qmp_read_timeout_s,
     )
     machine_note = f", -M {machine}" if machine else ""
@@ -207,9 +222,12 @@ def qemu_boot(
     accel_note = f", -accel {accel}" if accel else ""
     cpu_note = f", -cpu {cpu}" if cpu else ""
     hostfwd_note = f", hostfwd={hostfwd}" if hostfwd else ""
+    no_reboot_note = ", -no-reboot" if no_reboot else ""
+    no_shutdown_note = ", -no-shutdown" if no_shutdown else ""
     return (
         f"VM {name!r} booted (pid {vm.proc.pid}, {arch}, {memory_mb} MB"
-        f"{machine_note}{smp_note}{accel_note}{cpu_note}{hostfwd_note}).\n"
+        f"{machine_note}{smp_note}{accel_note}{cpu_note}{hostfwd_note}"
+        f"{no_reboot_note}{no_shutdown_note}).\n"
         f"Serial log: {vm.serial_path}\n"
         f"Next: qemu_wait_serial for a boot marker, or qemu_screenshot to see the display."
     )

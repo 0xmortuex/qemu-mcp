@@ -81,6 +81,10 @@ was tested, what still needs a real QEMU boot) behind each entry.
   / `-cpu help`'s own output, listing every valid `qemu_boot` `machine`/`cpu`
   value for an arch. Previously the README told a human to run these
   commands themselves; an agent driving this server has no shell to do that.
+- `no_reboot` / `no_shutdown` parameters on `qemu_boot` (QEMU's
+  `-no-reboot`/`-no-shutdown`), to freeze the VM on a guest kernel panic,
+  triple fault, or ACPI shutdown instead of losing the crash screen or last
+  serial output to an immediate restart/exit.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

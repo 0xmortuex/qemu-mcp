@@ -32,7 +32,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 
 | Tool | What it does |
 |------|--------------|
-| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code) plus optional `smp_cores`/`smp_threads`/`smp_sockets`/`smp_maxcpus` (QEMU `-smp` topology qualifiers `cores=`/`threads=`/`sockets=`/`maxcpus=` combined onto the same flag, for shaping a guest's CPU topology rather than just its total count), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), an optional `cpu` (QEMU `-cpu`, e.g. `"qemu64,+avx"`/`"max"`/`"host"`, to select or customize the emulated CPU model for testing a specific feature set), an optional `hostfwd` (QEMU's `hostfwd` rule, e.g. `"tcp::2222-:22"`, to reach a guest service like SSH from the host without needing QEMU's own NIC/chipset flags), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
+| `qemu_boot` | Boot a VM headless from `iso`, `kernel` (+`append`/`initrd`), and/or `disk`. Any arch QEMU supports (`x86_64`, `i386`, `aarch64`, `riscv64`…), an optional `machine` (QEMU `-M`, required on some archs), an optional `smp` (QEMU `-smp`, number of virtual CPUs, for testing SMP-aware guest code) plus optional `smp_cores`/`smp_threads`/`smp_sockets`/`smp_maxcpus` (QEMU `-smp` topology qualifiers `cores=`/`threads=`/`sockets=`/`maxcpus=` combined onto the same flag, for shaping a guest's CPU topology rather than just its total count), an optional `accel` (QEMU `-accel`, e.g. `"kvm:tcg"`/`"hvf:tcg"`/`"whpx:tcg"`, to opt into hardware acceleration), an optional `cpu` (QEMU `-cpu`, e.g. `"qemu64,+avx"`/`"max"`/`"host"`, to select or customize the emulated CPU model for testing a specific feature set), an optional `hostfwd` (QEMU's `hostfwd` rule, e.g. `"tcp::2222-:22"`, to reach a guest service like SSH from the host without needing QEMU's own NIC/chipset flags), `no_reboot`/`no_shutdown` (QEMU's `-no-reboot`/`-no-shutdown`, to freeze the VM on a guest crash/reboot/poweroff instead of losing the crash screen to a restart or exit), arbitrary extra QEMU args (networking, devices…), and overridable `qmp_connect_timeout_s`/`qmp_read_timeout_s` for slow hosts or long-running QMP commands |
 | `qemu_version` | Report the installed `qemu-system-<arch> --version` output, without booting a VM |
 | `qemu_machines` | Report `qemu-system-<arch> -M help` output: every valid `qemu_boot` `machine` value for that arch, without booting a VM |
 | `qemu_cpu_models` | Report `qemu-system-<arch> -cpu help` output: every valid `qemu_boot` `cpu` value for that arch, without booting a VM |
@@ -220,6 +220,19 @@ qemu_boot(name="k", disk="build/linux.qcow2", hostfwd="tcp::2222-:22,tcp::8080-:
 # host:2222 -> guest:22 (ssh), host:8080 -> guest:80 (http)
 ```
 
+### Freezing on a crash
+
+Without `-no-reboot`/`-no-shutdown`, a guest kernel panic (triple fault, or
+an ACPI shutdown) immediately restarts or exits the emulated machine - by
+the time `qemu_wait_serial`/`qemu_screenshot` looks, the crash screen or
+last serial output is already gone. Pass `no_reboot`/`no_shutdown` to freeze
+QEMU instead, leaving the VM inspectable (`qemu_screenshot`, `qemu_serial`)
+until you stop it yourself:
+
+```
+qemu_boot(name="k", kernel="build/kernel.elf", no_reboot=True, no_shutdown=True)
+```
+
 ## Debugging the kernel
 
 qemu-mcp lets an agent *see* a crash. To find out *why* it happened, pair it with
@@ -227,8 +240,8 @@ qemu-mcp lets an agent *see* a crash. To find out *why* it happened, pair it wit
 and an interrupt log:
 
 ```python
-qemu_boot(name="k", kernel="build/kernel.elf",
-          extra_args="-s -S -d int,cpu_reset -D int.log -no-reboot")
+qemu_boot(name="k", kernel="build/kernel.elf", no_reboot=True,
+          extra_args="-s -S -d int,cpu_reset -D int.log")
 ```
 
 Then the agent can `debug_connect` with the kernel ELF, set breakpoints on symbols

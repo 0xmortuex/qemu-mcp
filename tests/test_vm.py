@@ -769,6 +769,8 @@ def test_boot_does_not_create_workdir_for_bad_extra_args(monkeypatch):
         ("-cpu qemu64", {"cpu": "max"}),
         ("-netdev user,id=net0", {"hostfwd": "tcp::2222-:22"}),
         ("-device e1000,netdev=net0", {"hostfwd": "tcp::2222-:22"}),
+        ("-no-reboot", {"no_reboot": True}),
+        ("-no-shutdown", {"no_shutdown": True}),
     ],
 )
 def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, kwargs):
@@ -815,6 +817,9 @@ def test_boot_rejects_extra_args_that_collide_with_controlled_flags(extra_args, 
         # even then, only when they reuse qemu-mcp's own id=net0/netdev=net0 -
         # see test_boot_allows_unrelated_netdev_and_device_in_extra_args below).
         ("-netdev user,id=net0", {"hostfwd": None}),
+        # -no-reboot/-no-shutdown only conflict when their own param is True.
+        ("-no-reboot", {"no_reboot": False}),
+        ("-no-shutdown", {"no_shutdown": False}),
     ],
 )
 def test_boot_allows_extra_args_flag_when_its_own_param_is_not_given(extra_args, kwargs):
@@ -2837,6 +2842,54 @@ def test_boot_omits_hostfwd_flags_when_not_given(tmp_path, monkeypatch):
         assert "-device" not in booted.cmdline
     finally:
         booted = vm._vms.pop("boot-without-hostfwd", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_passes_no_reboot_and_no_shutdown_onto_the_qemu_command_line(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-with-no-reboot-no-shutdown", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, no_reboot=True, no_shutdown=True,
+        )
+        assert "-no-reboot" in booted.cmdline
+        assert "-no-shutdown" in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-with-no-reboot-no-shutdown", None)
+        if booted is not None:
+            booted.proc.wait(timeout=3)
+            shutil.rmtree(booted.workdir, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake binary is a POSIX shell script")
+def test_boot_omits_no_reboot_and_no_shutdown_flags_when_not_given(tmp_path, monkeypatch):
+    _make_fake_qemu_script(tmp_path, "exit 0")
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    _RecordingQMPClient.calls = []
+    monkeypatch.setattr(vm, "QMPClient", _RecordingQMPClient)
+    iso = tmp_path / "fake.iso"
+    iso.write_bytes(b"")
+
+    try:
+        booted = vm.boot(
+            name="boot-without-no-reboot-no-shutdown", arch="x86_64", memory_mb=64,
+            iso=str(iso), kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None,
+        )
+        assert "-no-reboot" not in booted.cmdline
+        assert "-no-shutdown" not in booted.cmdline
+    finally:
+        booted = vm._vms.pop("boot-without-no-reboot-no-shutdown", None)
         if booted is not None:
             booted.proc.wait(timeout=3)
             shutil.rmtree(booted.workdir, ignore_errors=True)
