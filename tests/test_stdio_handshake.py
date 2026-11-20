@@ -31,6 +31,7 @@ EXPECTED_TOOLS = {
     "qemu_change_media",
     "qemu_serial",
     "qemu_serial_send",
+    "qemu_inspect",
     "qemu_wait_serial",
     "qemu_wait_screen",
     "qemu_list",

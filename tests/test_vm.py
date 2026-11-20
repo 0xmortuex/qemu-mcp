@@ -3327,6 +3327,54 @@ def test_qemu_serial_rejects_non_positive_tail_lines():
             assert "tail_lines" in str(e)
 
 
+def test_qemu_inspect_reports_cmdline_and_log_tail(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-inspect-test"
+    workdir.mkdir()
+    (workdir / "qemu.log").write_text("warning: deprecated flag\nqemu log line 2\n")
+    fake = _register_fake_vm("inspect-test", workdir)
+    fake.cmdline = ["qemu-system-x86_64", "-m", "512", "-cdrom", "has space.iso"]
+
+    try:
+        out = server.qemu_inspect(name="inspect-test")
+    finally:
+        vm._vms.pop("inspect-test", None)
+
+    assert "VM exited, code 0" in out
+    assert "qemu-system-x86_64 -m 512 -cdrom 'has space.iso'" in out
+    assert "warning: deprecated flag" in out
+    assert "qemu log line 2" in out
+
+
+def test_qemu_inspect_reports_no_log_output_placeholder_when_log_is_empty(tmp_path):
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-inspect-empty-test"
+    workdir.mkdir()
+    (workdir / "qemu.log").write_text("")
+    _register_fake_vm("inspect-empty-test", workdir)
+
+    try:
+        out = server.qemu_inspect(name="inspect-empty-test")
+    finally:
+        vm._vms.pop("inspect-empty-test", None)
+
+    assert "(no QEMU log output)" in out
+
+
+def test_qemu_inspect_rejects_non_positive_log_tail_lines():
+    # Same validation-gap shape as qemu_serial's tail_lines check above.
+    from qemu_mcp import server
+
+    for bad in (0, -1, -50):
+        try:
+            server.qemu_inspect(name="no-such-vm", log_tail_lines=bad)
+            assert False, f"expected ValueError for log_tail_lines={bad!r}"
+        except ValueError as e:
+            assert "log_tail_lines" in str(e)
+
+
 class _BlockingQMPClient:
     """Stands in for QMPClient: signals it has been constructed, then blocks
     until the test releases it - parks boot() mid-flight (after Popen, mid

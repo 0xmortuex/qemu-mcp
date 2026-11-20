@@ -85,6 +85,11 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `-no-reboot`/`-no-shutdown`), to freeze the VM on a guest kernel panic,
   triple fault, or ACPI shutdown instead of losing the crash screen or last
   serial output to an immediate restart/exit.
+- `qemu_inspect` — report the exact QEMU command line a VM was booted with
+  and a tail of QEMU's own stdout/stderr log (not the guest's — that's
+  `qemu_serial`'s job), so a warning or silently-ignored flag QEMU itself
+  printed is visible instead of only surfacing when a boot fails outright.
+  Works after the VM has exited too, same as `qemu_serial`.
 
 ### Changed
 - `qemu_wait_serial` now searches only output after the previous successful wait's match

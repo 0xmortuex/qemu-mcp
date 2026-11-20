@@ -37,6 +37,7 @@ HINTS = {
     "qemu_change_media":    (False,    True,       True,      False),
     "qemu_serial":          (True,     False,      True,      False),
     "qemu_serial_send":     (False,    True,       False,     False),
+    "qemu_inspect":         (True,     False,      True,      False),
     "qemu_wait_serial":     (True,     False,      False,     False),
     "qemu_wait_screen":     (True,     False,      True,      False),
     "qemu_list":            (False,    True,       True,      False),

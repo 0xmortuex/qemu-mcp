@@ -6,6 +6,7 @@ import functools
 import io
 import json
 import os
+import shlex
 import tempfile
 import time
 from collections.abc import Callable
@@ -547,6 +548,29 @@ def qemu_serial_send(name: str, text: str) -> str:
     with vmmod.in_use(name):
         vm.serial_console.send(text)
     return f"sent {len(text)} bytes to {name!r}'s serial console"
+
+
+@tool(read_only=True, destructive=False, idempotent=True, open_world=False)
+def qemu_inspect(name: str, log_tail_lines: int = 50) -> str:
+    """Show the exact QEMU command line used to boot the VM, plus a tail of QEMU's own stdout/stderr.
+
+    This is QEMU's own log (a deprecated flag warning, an unimplemented
+    device stub, a silently-ignored extra_args option) - not the guest's,
+    which is qemu_serial's job. Works even after the VM has exited (same
+    as qemu_serial), since both the command line and the log are just
+    stored/on-disk data, not a live QMP query. log_tail_lines must be
+    positive.
+    """
+    if log_tail_lines <= 0:
+        raise ValueError(f"invalid log_tail_lines {log_tail_lines!r}: must be positive")
+    vm = vmmod.get_vm_any(name)
+    note = f"(VM exited, code {vm.proc.returncode})\n" if not vm.running else ""
+    log_text = vm.qemu_log_text()
+    log_tail = vmmod.tail(log_text, log_tail_lines) if log_text else "(no QEMU log output)"
+    return (
+        f"{note}command line:\n{shlex.join(vm.cmdline)}\n\n"
+        f"QEMU log (last {log_tail_lines} lines):\n{log_tail}"
+    )
 
 
 # Doesn't touch the VM, but advances this server's serial mark: the same

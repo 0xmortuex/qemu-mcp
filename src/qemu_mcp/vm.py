@@ -495,6 +495,13 @@ class VM:
         except OSError:
             return ""
 
+    def qemu_log_text(self) -> str:
+        try:
+            with open(self.qemu_log, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError:
+            return ""
+
     def serial_bytes_from(self, offset: int) -> tuple[bytes, int]:
         """Read serial.log bytes written at or after `offset`.
 

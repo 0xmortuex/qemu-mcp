@@ -50,6 +50,7 @@ The existing ones assume a *full, running guest OS* — they exec commands over 
 | `qemu_change_media` | Swap the medium in a removable drive (e.g. a CD-ROM) without rebooting. `device` is the block backend's id/QOM path, found via `qemu_qmp(name, "query-block")` — not guessable, since it depends on the machine type/QEMU version |
 | `qemu_serial` | Tail the serial console (COM1) output — works after the VM has exited too, to see what it printed right before dying |
 | `qemu_serial_send` | Write text to the serial console (COM1) |
+| `qemu_inspect` | Show the exact QEMU command line used to boot the VM, plus a tail of QEMU's own stdout/stderr log (not the guest's — that's `qemu_serial`). Works after the VM has exited too |
 | `qemu_wait_serial` | Block until given text appears on serial, or timeout. Each wait only searches output after the previous match, so waiting for a prompt after a command finds the new one (`from_start=True` searches the whole log) |
 | `qemu_wait_screen` | Block until the display stops changing (for VGA-only guests with no serial output), or timeout. A blinking text cursor counts as settled (`max_changed_pixels`, default 64) |
 | `qemu_list` | All managed VMs with state, arch, machine, hostfwd, pid, uptime. A VM paused via `qemu_pause` shows as `running (paused)` |
@@ -60,7 +61,7 @@ Multiple named VMs can run at once.
 
 Every tool declares all four MCP behaviour hints, so your client knows which calls to
 confirm with you. Only the waiting and reading tools (`qemu_screenshot`, `qemu_serial`,
-`qemu_wait_serial`, `qemu_wait_screen`, `qemu_snapshot_list`, `qemu_version`,
+`qemu_inspect`, `qemu_wait_serial`, `qemu_wait_screen`, `qemu_snapshot_list`, `qemu_version`,
 `qemu_machines`, `qemu_cpu_models`) are read-only. `qemu_boot` and `qemu_list` are marked destructive because they clean up VMs
 that exited on their own, deleting their serial logs; read a crashed guest's output with
 `qemu_serial` first. `qemu_boot` and `qemu_qmp` are open-world: `extra_args` and raw QMP
