@@ -299,6 +299,12 @@ See [CHANGELOG.md](CHANGELOG.md).
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the exact local setup and checks
 CI runs.
 
+## Security
+
+qemu-mcp assumes the agent driving it is trusted — it does not sandbox
+`qemu_qmp`, `extra_args`, or `hostfwd`. See [SECURITY.md](SECURITY.md) for
+the full trust model and how to report a vulnerability.
+
 ## License
 
 MIT
