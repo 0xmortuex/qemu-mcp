@@ -567,6 +567,24 @@ def test_parse_hostfwd_accepts_the_boundary_port_65535():
     assert vm.parse_hostfwd("tcp::65535-:22") == ["tcp::65535-:22"]
 
 
+def test_parse_hostfwd_rejects_a_bracketed_ipv6_host_address():
+    # QEMU's own hostfwd= rule parser (net/slirp.c's slirp_hostfwd()) only
+    # ever calls inet_aton() on the host/guest address - confirmed directly
+    # against the current upstream source, which has no bracket-stripping
+    # for "[...]" and a "/* TODO: IPv6 */" comment on the guestfwd side -
+    # so an IPv6 host address isn't meaningful to real QEMU here, unlike
+    # the standalone qemu_boot hostfwd= rule this project builds. This just
+    # locks in the resulting, already-correct behavior: _HOSTFWD_RE's
+    # hostaddr group ([\w.]*) doesn't match "[" or ":", so a bracketed
+    # IPv6 literal fails the same clear "invalid hostfwd rule" ValueError
+    # as any other malformed rule, rather than reaching QEMU to fail there.
+    try:
+        vm.parse_hostfwd("tcp:[::1]:2222-:22")
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert repr("tcp:[::1]:2222-:22") in str(e)
+
+
 def test_boot_rejects_hostfwd_port_above_65535_without_creating_a_workdir(monkeypatch):
     created = _track_mkdtemp(monkeypatch)
     try:

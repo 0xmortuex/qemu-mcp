@@ -224,6 +224,14 @@ def parse_hostfwd(hostfwd: str) -> list[str]:
     doesn't catch (only OSError is), so an out-of-range port used to escape
     uncaught past server.py's _EXPECTED tuple as a bare "Error executing
     tool qemu_boot" instead of a clear pre-flight error.
+
+    No support for a bracketed IPv6 host address (e.g. "[::1]") - confirmed
+    against QEMU's own net/slirp.c, whose hostfwd= rule parser
+    (slirp_hostfwd()) only ever calls inet_aton() on the host/guest address
+    with no bracket-stripping, so an IPv6 host address isn't meaningful to
+    real QEMU here regardless of what this function accepts. _HOSTFWD_RE's
+    hostaddr group ([\\w.]*) already can't match "[" or ":", so this already
+    raises the same clear ValueError as any other malformed rule.
     """
     rules = [part.strip() for part in hostfwd.split(",")]
     seen: dict[tuple[str, str, str], str] = {}
