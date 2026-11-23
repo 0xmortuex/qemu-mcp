@@ -3237,6 +3237,68 @@ def test_qemu_wait_serial_finds_text_appended_after_polling_started(tmp_path):
         vm._vms.pop("wait-serial-incremental", None)
 
 
+def test_qemu_wait_serial_serializes_concurrent_calls_for_the_same_vm(tmp_path):
+    # Regression test: vm.serial_mark (the per-VM "only see output after the
+    # last match" cursor) was read then written with no lock - two
+    # concurrent qemu_wait_serial calls for the same VM could both read the
+    # same stale serial_mark and race to write it back, corrupting whichever
+    # wait comes next. Same deterministic concurrent-entry-detection
+    # approach as test_serial.py's test_send_serializes_concurrent_calls:
+    # the actual scheduling-dependent race is unreliable to force directly,
+    # but two threads *entering* the per-poll read at the same time is
+    # exactly what vm.serial_mark_lock must prevent, and that's detectable.
+    from qemu_mcp import server
+
+    workdir = tmp_path / "qemu-mcp-wait-serial-concurrent"
+    workdir.mkdir()
+    (workdir / "serial.log").write_text("AAA then BBB\n")
+    fake = _register_fake_vm("wait-serial-concurrent", workdir)
+    fake.proc = _RunningFakeProc()
+
+    guard = threading.Lock()
+    state = {"active": 0, "violation": False}
+    original = vm.VM.serial_bytes_from
+
+    def tracking_serial_bytes_from(self, offset):
+        with guard:
+            state["active"] += 1
+            if state["active"] > 1:
+                state["violation"] = True
+        time.sleep(0.05)
+        try:
+            return original(self, offset)
+        finally:
+            with guard:
+                state["active"] -= 1
+
+    results: list[str] = []
+
+    def worker(text):
+        results.append(server.qemu_wait_serial(
+            name="wait-serial-concurrent", text=text, timeout_s=0, poll_interval_s=0.01,
+        ))
+
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(vm.VM, "serial_bytes_from", tracking_serial_bytes_from)
+            threads = [
+                threading.Thread(target=worker, args=("AAA",)),
+                threading.Thread(target=worker, args=("BBB",)),
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5)
+        assert not state["violation"], (
+            "two qemu_wait_serial calls for the same VM entered the "
+            "serial_mark-reading critical section at the same time"
+        )
+        assert len(results) == 2
+        assert all(r.startswith("FOUND") for r in results), results
+    finally:
+        vm._vms.pop("wait-serial-concurrent", None)
+
+
 def test_qemu_type_rejects_negative_delay_ms():
     # Regression test: a negative delay_ms used to reach time.sleep(delay_ms
     # / 1000) unvalidated, inside the per-character loop - so it raised a

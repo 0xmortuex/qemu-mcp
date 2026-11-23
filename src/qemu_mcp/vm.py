@@ -491,6 +491,15 @@ class VM:
     # Serial-log byte offset just past the last qemu_wait_serial match, so
     # the next wait only sees new output (e.g. the prompt after a command).
     serial_mark: int = 0
+    # Guards serial_mark across a whole qemu_wait_serial call (read the
+    # starting offset, poll, write the new mark) - two concurrent waits on
+    # the same VM otherwise both read the same stale serial_mark, then race
+    # to write it back, so whichever call's write lands last can move the
+    # mark backward relative to the other call's already-consumed match,
+    # corrupting "only see output after the last match" for whatever wait
+    # comes next. Same whole-round-trip-under-one-lock shape as
+    # QMPClient.command/SerialConsole.send use for their own shared state.
+    serial_mark_lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
     def running(self) -> bool:

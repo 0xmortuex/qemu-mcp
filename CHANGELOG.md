@@ -249,3 +249,11 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `OSError` - crashing `qemu_boot` with a bare "Error executing tool
   qemu_boot" instead of a clear validation error. `parse_hostfwd()` now
   rejects an out-of-range host port before any probing happens.
+- `qemu_wait_serial`'s per-VM "only see output after the last match"
+  cursor (`VM.serial_mark`) was read then written with no lock - two
+  concurrent `qemu_wait_serial` calls for the same VM could both read the
+  same stale value and race to write it back, moving the cursor backward
+  relative to whichever call's match it should have followed. Calls for
+  the same VM are now serialized via a new per-VM `serial_mark_lock`
+  (same whole-round-trip-under-one-lock shape as `QMPClient.command`/
+  `SerialConsole.send`), instead of racing.

@@ -590,7 +590,12 @@ def qemu_wait_serial(
     of the log (so a marker printed before the call is still found);
     from_start=True searches the whole log again.
     Returns the serial tail either way, prefixed FOUND or TIMEOUT. Always
-    checks at least once, even if timeout_s is 0 or negative.
+    checks at least once, even if timeout_s is 0 or negative. Two calls for
+    the same VM made concurrently are serialized (the second blocks until
+    the first returns) rather than racing on the shared "last match"
+    position - this feature's own per-VM reading cursor has no sane
+    concurrent semantics, so it's treated the same as a human typing a
+    command and waiting for the next prompt, one step at a time.
     poll_interval_s (default 0.25s) must be positive. Each poll reads only
     the serial log bytes written since the previous poll, not the whole
     file, so a long wait against a chatty guest doesn't cost ever-more I/O
@@ -605,7 +610,7 @@ def qemu_wait_serial(
             "would busy-loop serial reads against the VM)"
         )
     vm = vmmod.get_vm(name)
-    with vmmod.in_use(name):
+    with vmmod.in_use(name), vm.serial_mark_lock:
         deadline = time.monotonic() + timeout_s
         raw = b""
         start = 0 if from_start else vm.serial_mark
