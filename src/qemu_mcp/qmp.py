@@ -59,7 +59,21 @@ class QMPClient:
                 raise QMPError("QMP connection closed by QEMU")
             self._buf += chunk
         line, self._buf = self._buf.split(b"\n", 1)
-        result: dict[str, Any] = json.loads(line)
+        try:
+            result: dict[str, Any] = json.loads(line)
+        except json.JSONDecodeError as e:
+            # json.JSONDecodeError is a ValueError, not an OSError, so it
+            # wasn't caught by any of the except clauses above - it escaped
+            # _read_msg() uncaught, and vm.boot()'s "except QMPError" handler
+            # (which cleans up the just-launched QEMU process/workdir on any
+            # handshake failure) doesn't catch a bare ValueError either, so a
+            # malformed line here used to leak both instead of hitting that
+            # cleanup path, the same leak shape every other QMPClient
+            # exception-wrapping fix in this project's history exists to
+            # avoid. QEMU itself always sends well-formed JSON lines over a
+            # real QMP socket, so this is defensive, not a reproduced wire
+            # failure.
+            raise QMPError(f"QMP sent a line that isn't valid JSON: {line!r} ({e})") from None
         return result
 
     def command(self, name: str, /, **arguments: Any) -> Any:

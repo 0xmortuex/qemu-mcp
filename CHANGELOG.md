@@ -257,3 +257,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
   the same VM are now serialized via a new per-VM `serial_mark_lock`
   (same whole-round-trip-under-one-lock shape as `QMPClient.command`/
   `SerialConsole.send`), instead of racing.
+- A malformed line on the QMP socket raised a raw `json.JSONDecodeError`
+  instead of `QMPError` - since it's a `ValueError`, not an `OSError`, it
+  escaped every other QMPClient exception-wrapping path, including
+  `vm.boot()`'s `except QMPError` cleanup handler, which would have leaked
+  the just-launched QEMU process and its workdir instead of cleaning them
+  up. `_read_msg()` now wraps `json.JSONDecodeError` as `QMPError` too.

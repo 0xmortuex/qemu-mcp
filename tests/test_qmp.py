@@ -177,6 +177,34 @@ def test_read_msg_raises_qmp_error_when_connection_is_closed_by_peer():
         server.close()
 
 
+def test_read_msg_wraps_a_malformed_json_line_in_qmp_error():
+    # json.JSONDecodeError is a ValueError, not an OSError - confirmed this
+    # test fails against the pre-fix source with a raw JSONDecodeError
+    # escaping command() uncaught, instead of the QMPError every other
+    # QMPClient failure path already raises.
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    port = server.getsockname()[1]
+    server.listen(1)
+
+    def run():
+        conn, _ = server.accept()
+        conn.sendall(b'{"QMP": {"version": {}}}\n')
+        conn.recv(65536)  # qmp_capabilities
+        conn.sendall(b'{"return": {}}\n')
+        conn.recv(65536)  # the command under test
+        conn.sendall(b"not valid json\n")
+
+    threading.Thread(target=run, daemon=True).start()
+    try:
+        client = QMPClient(port)
+        with pytest.raises(QMPError, match="isn't valid JSON"):
+            client.command("query-status")
+    finally:
+        client.close()
+        server.close()
+
+
 def test_close_waits_for_an_in_progress_command_before_closing():
     # close() must share command()'s lock: vm.stop() calls qmp.close()
     # without waiting for a concurrent qemu_qmp call the way it waits for
