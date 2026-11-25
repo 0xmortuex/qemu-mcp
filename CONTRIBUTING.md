@@ -5,7 +5,7 @@
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # .venv\Scripts\activate on Windows
-pip install "ruff==0.16.0" "mypy==2.3.0" -e ".[test]"
+pip install "ruff==0.17.6" "mypy==2.4.1" -e ".[test]"
 ```
 
 Pinned `ruff`/`mypy` versions match what CI installs

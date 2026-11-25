@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install "ruff==0.16.0" "mypy==2.3.0" ".[test]"
+      - run: pip install "ruff==0.17.6" "mypy==2.4.1" ".[test]"
       - run: ruff check src tests
       - run: mypy --strict src
       - name: pytest (unit tests + stdio handshake, no QEMU)

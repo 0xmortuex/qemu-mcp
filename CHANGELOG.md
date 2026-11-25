@@ -108,6 +108,9 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `python -m build`/`twine check` output; the package is not yet published.
 - Added a `py.typed` marker (PEP 561) so type checkers recognize that
   `qemu_mcp` ships inline types, instead of treating it as untyped.
+- Bumped CI/`CONTRIBUTING.md`'s pinned `ruff`/`mypy` versions from
+  `0.16.0`/`2.3.0` to `0.17.6`/`2.4.1` after verifying both pass cleanly
+  against this project's `src`/`tests` with zero new findings.
 
 ### Fixed
 - `qemu_type` translated characters while sending, so an untypeable character left a
