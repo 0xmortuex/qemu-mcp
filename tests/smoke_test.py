@@ -38,9 +38,12 @@ DISK = os.environ.get("QEMU_MCP_TEST_QCOW2")  # optional: a qcow2 disk, to also 
 CREATED_DISK = None  # set below if DISK wasn't given, so it can be cleaned up at the end
 
 print(server.qemu_version(arch=ARCH))
+print(server.qemu_machines(arch=ARCH)[:400])
+print(server.qemu_cpu_models(arch=ARCH)[:400])
 
 print(server.qemu_boot(name="smoke", iso=ISO, arch=ARCH, memory_mb=256))
 print(server.qemu_list())
+print(server.qemu_inspect(name="smoke")[:400])
 
 print(server.qemu_wait_screen(name="smoke", timeout_s=15, poll_interval_s=1.0, stable_polls=2))
 
