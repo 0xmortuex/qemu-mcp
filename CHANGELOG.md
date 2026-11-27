@@ -260,6 +260,12 @@ was tested, what still needs a real QEMU boot) behind each entry.
   the same VM are now serialized via a new per-VM `serial_mark_lock`
   (same whole-round-trip-under-one-lock shape as `QMPClient.command`/
   `SerialConsole.send`), instead of racing.
+- `qemu_boot`'s `hostfwd` validated the host port against 0-65535 but not
+  the guest port on the other side of the rule (e.g.
+  `"tcp::2222-:99999"`), which would have reached the QEMU command line
+  unrejected since there's no `bind()` probe on the guest side to catch it
+  by accident; the guest port is now checked the same way the host port
+  already was.
 - A malformed line on the QMP socket raised a raw `json.JSONDecodeError`
   instead of `QMPError` - since it's a `ValueError`, not an `OSError`, it
   escaped every other QMPClient exception-wrapping path, including

@@ -567,6 +567,23 @@ def test_parse_hostfwd_accepts_the_boundary_port_65535():
     assert vm.parse_hostfwd("tcp::65535-:22") == ["tcp::65535-:22"]
 
 
+def test_parse_hostfwd_rejects_a_guest_port_above_65535():
+    # Same shape as test_parse_hostfwd_rejects_a_host_port_above_65535, but
+    # for the guest side: _HOSTFWD_RE's guestport group is also a bare \d+
+    # with no upper bound, and nothing probes the guest port (there's no
+    # bind() call to catch it by accident) - unlike the host port, this
+    # used to reach the command line with no check at all.
+    try:
+        vm.parse_hostfwd("tcp::2222-:99999")
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "99999" in str(e)
+
+
+def test_parse_hostfwd_accepts_the_boundary_guest_port_65535():
+    assert vm.parse_hostfwd("tcp::2222-:65535") == ["tcp::2222-:65535"]
+
+
 def test_parse_hostfwd_rejects_a_bracketed_ipv6_host_address():
     # QEMU's own hostfwd= rule parser (net/slirp.c's slirp_hostfwd()) only
     # ever calls inet_aton() on the host/guest address - confirmed directly
@@ -596,6 +613,20 @@ def test_boot_rejects_hostfwd_port_above_65535_without_creating_a_workdir(monkey
         assert False, "expected ValueError"
     except ValueError as e:
         assert "999999" in str(e)
+    assert created == []
+
+
+def test_boot_rejects_hostfwd_guest_port_above_65535_without_creating_a_workdir(monkeypatch):
+    created = _track_mkdtemp(monkeypatch)
+    try:
+        vm.boot(
+            name="valid-name", arch="x86_64", memory_mb=64,
+            iso="whatever", kernel=None, append=None, initrd=None,
+            disk=None, extra_args=None, hostfwd="tcp::2222-:99999",
+        )
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "99999" in str(e)
     assert created == []
 
 

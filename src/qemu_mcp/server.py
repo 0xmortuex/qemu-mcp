@@ -175,7 +175,7 @@ def qemu_boot(
     net0/e1000 pair instead of needing a second NIC - two rules claiming the
     same host port (e.g. "tcp::2222-:22,tcp::2222-:80") are rejected up
     front rather than each passing the pre-flight port-free probe below.
-    Each rule's host port must be 0-65535.
+    Each rule's host port and guest port must be 0-65535.
     no_reboot/no_shutdown map to QEMU's -no-reboot/-no-shutdown flags: without
     them, a guest kernel panic that triggers a triple fault or ACPI shutdown
     immediately restarts or exits the emulated machine, so by the time

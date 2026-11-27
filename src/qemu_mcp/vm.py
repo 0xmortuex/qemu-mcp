@@ -195,7 +195,7 @@ _SERIAL_BACKEND = f"chardev:{_SERIAL_CHARDEV_ID}"
 _HOSTFWD_NETDEV_ID = "net0"
 _HOSTFWD_NIC_MODEL = "e1000"
 _HOSTFWD_RE = re.compile(
-    r"^(?:(?P<proto>tcp|udp):)?(?P<hostaddr>[\w.]*):(?P<hostport>\d+)-[\w.]*:\d+$"
+    r"^(?:(?P<proto>tcp|udp):)?(?P<hostaddr>[\w.]*):(?P<hostport>\d+)-[\w.]*:(?P<guestport>\d+)$"
 )
 
 
@@ -225,6 +225,18 @@ def parse_hostfwd(hostfwd: str) -> list[str]:
     uncaught past server.py's _EXPECTED tuple as a bare "Error executing
     tool qemu_boot" instead of a clear pre-flight error.
 
+    Also rejects a guest port outside 0-65535, the same bound as the host
+    port above - but for a different reason, since there's no bind() probe
+    on the guest side to catch an out-of-range value by accident. Confirmed
+    against QEMU's own net/slirp.c (slirp_hostfwd()): it reads the guest
+    port with plain strtol()/atoi()-style parsing and no range check of its
+    own, so e.g. "tcp::2222-:99999" would previously have reached the
+    command line unrejected - what QEMU actually does with a port number
+    that doesn't fit in 16 bits isn't verified here (no QEMU in this
+    environment), but nothing well-defined comes from a port forward a
+    caller didn't actually ask for, so this is rejected pre-flight the same
+    way the equally out-of-range host port already is.
+
     No support for a bracketed IPv6 host address (e.g. "[::1]") - confirmed
     against QEMU's own net/slirp.c, whose hostfwd= rule parser
     (slirp_hostfwd()) only ever calls inet_aton() on the host/guest address
@@ -247,6 +259,12 @@ def parse_hostfwd(hostfwd: str) -> list[str]:
             raise ValueError(
                 f"invalid hostfwd rule {rule!r} in {hostfwd!r}: host port "
                 f"{hostport_num} is out of range (must be 0-65535)"
+            )
+        guestport_num = int(match.group("guestport"))
+        if guestport_num > 65535:
+            raise ValueError(
+                f"invalid hostfwd rule {rule!r} in {hostfwd!r}: guest port "
+                f"{guestport_num} is out of range (must be 0-65535)"
             )
         key = (
             match.group("proto") or "tcp",
