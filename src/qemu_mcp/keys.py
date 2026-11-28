@@ -66,6 +66,18 @@ def _split_combo(raw: str) -> list[str]:
     (e.g. "ctrl+-" for zoom-out), so a plain split() can't tell "ctrl-alt"
     apart from a combo containing a literal dash. "--" resolves that:
     "ctrl--" is ctrl + literal "-", "ctrl---alt" is ctrl + "-" + alt.
+
+    A plain (non-escaped) "-" delimiter must have a key name on both
+    sides - "-ctrl" (leading) and "ctrl-" (trailing) raise ValueError
+    instead of silently dropping the stray delimiter and returning just
+    ["ctrl"], which used to happen because an empty `buf` at that point
+    (nothing accumulated yet, or nothing left to accumulate) was simply
+    skipped rather than treated as a sign of a malformed combo - the same
+    "swallows a typo instead of raising" shape as this project's other
+    pre-flight validation fixes. Confirmed directly: parse_combo("ctrl-")
+    returned ["ctrl"] before this fix, the exact same result as the
+    presumably-intended "ctrl" with no trailing "-" at all, silently
+    hiding whichever one the caller actually meant.
     """
     parts = []
     buf = ""
@@ -82,7 +94,17 @@ def _split_combo(raw: str) -> list[str]:
             if buf:
                 parts.append(buf)
                 buf = ""
+            elif not parts:
+                raise ValueError(
+                    f"invalid key combo {raw!r}: '-' needs a key name before it "
+                    "(use '--' for a literal '-' key)"
+                )
             i += 1
+            if i >= n:
+                raise ValueError(
+                    f"invalid key combo {raw!r}: '-' needs a key name after it "
+                    "(use '--' for a literal '-' key)"
+                )
             continue
         buf += raw[i]
         i += 1
@@ -94,7 +116,9 @@ def _split_combo(raw: str) -> list[str]:
 def parse_combo(combo: str) -> list[str]:
     """'ctrl-alt-f2' / 'F12' / 'enter' -> qcodes pressed together.
 
-    A literal "-" key is written "--" (e.g. "ctrl--" for ctrl + minus).
+    A literal "-" key is written "--" (e.g. "ctrl--" for ctrl + minus). A
+    leading or trailing plain "-" (e.g. "-ctrl", "ctrl-") raises ValueError
+    instead of silently dropping the stray delimiter.
     """
     parts = _split_combo(combo.strip().lower())
     if not parts:

@@ -272,3 +272,8 @@ was tested, what still needs a real QEMU boot) behind each entry.
   `vm.boot()`'s `except QMPError` cleanup handler, which would have leaked
   the just-launched QEMU process and its workdir instead of cleaning them
   up. `_read_msg()` now wraps `json.JSONDecodeError` as `QMPError` too.
+- `qemu_key`'s combo parser silently dropped a stray leading or trailing
+  `-` instead of raising - `"ctrl-"` and `"-ctrl"` both parsed to just
+  `["ctrl"]`, the same result as leaving the extra `-` off entirely,
+  hiding a likely typo instead of flagging it. A plain `-` delimiter now
+  requires a key name on both sides.

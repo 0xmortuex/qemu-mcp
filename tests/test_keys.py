@@ -119,7 +119,6 @@ def test_char_to_keys_rejects_non_single_char(ch):
         ("--", ["minus"]),  # "--" is an escaped literal "-" key
         ("ctrl--", ["ctrl", "minus"]),  # ctrl + literal "-" (e.g. zoom out)
         ("ctrl---alt", ["ctrl", "minus", "alt"]),  # literal "-" mid-combo
-        ("shift---", ["shift", "minus"]),  # trailing lone "-" is ignored
     ],
 )
 def test_parse_combo_good_cases(combo, expected):
@@ -128,6 +127,26 @@ def test_parse_combo_good_cases(combo, expected):
 
 @pytest.mark.parametrize("combo", ["", "   ", "-"])
 def test_parse_combo_empty_combo_raises(combo):
+    with pytest.raises(ValueError):
+        parse_combo(combo)
+
+
+@pytest.mark.parametrize(
+    "combo",
+    [
+        "ctrl-",  # trailing lone "-": used to silently return ["ctrl"]
+        "-ctrl",  # leading lone "-": used to silently return ["ctrl"]
+        "ctrl-alt-",  # trailing lone "-" after a longer combo
+        "-alt-f1",  # leading lone "-" before a longer combo
+        "shift---",  # literal "-" followed by a dangling trailing "-"
+        "ctrl---",  # same shape, nothing after the dangling trailing "-"
+    ],
+)
+def test_parse_combo_stray_delimiter_raises(combo):
+    # A plain "-" delimiter needs a key name on both sides - before this
+    # fix, one with nothing on one side (a leading or trailing stray "-")
+    # was silently dropped instead of raising, e.g. parse_combo("ctrl-")
+    # returned ["ctrl"] instead of flagging the likely-unintended "-".
     with pytest.raises(ValueError):
         parse_combo(combo)
 

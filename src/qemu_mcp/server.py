@@ -335,10 +335,11 @@ def qemu_key(name: str, combo: str) -> str:
     """Press a key or chord: "enter", "esc", "f12", "ctrl-alt-f2", "ctrl-c"...
 
     Parts are joined with "-" and pressed together. A literal "-" key is
-    written "--" (e.g. "ctrl--" for ctrl + minus). Use qemu_type for
-    plain text. "sysrq" sends the Linux Magic SysRq key (e.g.
-    "alt-sysrq-s" to sync disks, "alt-sysrq-c" to force a crash dump on a
-    guest kernel built with CONFIG_MAGIC_SYSRQ).
+    written "--" (e.g. "ctrl--" for ctrl + minus); a stray leading or
+    trailing "-" ("-ctrl", "ctrl-") raises instead of being silently
+    dropped. Use qemu_type for plain text. "sysrq" sends the Linux Magic
+    SysRq key (e.g. "alt-sysrq-s" to sync disks, "alt-sysrq-c" to force a
+    crash dump on a guest kernel built with CONFIG_MAGIC_SYSRQ).
     """
     vm = vmmod.get_vm(name)
     qcodes = keymod.parse_combo(combo)
